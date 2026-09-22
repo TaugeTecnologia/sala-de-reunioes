@@ -122,7 +122,7 @@ As exportações antigas permanecem com seu conteúdo original.
 ## Reprocessar um arquivo existente
 
 ```powershell
-python .\trazer-agenda-de-setembro.py --reprocessar ".\exportacoes\agenda-setembro-2026-20260922T171802380301Z.json"
+python .\trazer-agenda-de-setembro.py --reprocessar ".\exportacoes\agenda-setembro-2026-20260922T175621433700Z.json"
 ```
 
 Aceita os JSONs antigos com `usuarios` e os novos com `agendas`. Gera outro JSON
