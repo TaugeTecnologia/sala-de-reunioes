@@ -1,0 +1,8 @@
+token*.json
+client_secret*.json
+credentials.json
+conta-servico*.json
+service-account*.json
+exportacoes/
+__pycache__/
+.venv/
