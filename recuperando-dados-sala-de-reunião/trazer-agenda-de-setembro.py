@@ -55,6 +55,7 @@ def argumentos():
     parser.add_argument("--saida", type=Path, default=PASTA / "exportacoes", help="Pasta dos arquivos JSON e da lista de eventos em Markdown.")
     parser.add_argument("--sala", action="append", help="E-mail da agenda da sala (pode repetir), ou nome da sala padrão TAUGE CENTRAL.")
     parser.add_argument("--reprocessar", type=Path, help="Filtra um JSON já exportado, sem conectar ao Google.")
+    parser.add_argument("--painel", action="store_true", help="Atualiza apenas o JSON fixo do painel após uma coleta sem erros, sem Markdown.")
     args = parser.parse_args()
     if not 1 <= args.ano <= 9999:
         parser.error("--ano deve estar entre 1 e 9999.")
@@ -70,6 +71,8 @@ def argumentos():
         parser.error("--sala não pode ser vazio.")
     if args.reprocessar and (args.autorizar or args.token or args.conta_servico or args.client_secret):
         parser.error("--reprocessar não usa opções de autenticação.")
+    if args.painel and args.reprocessar:
+        parser.error("--painel não pode ser combinado com --reprocessar.")
     return args
 
 
@@ -692,6 +695,9 @@ def salvar_lista_eventos(caminho_json, relatorio):
 
 
 def executar(args):
+    painel = getattr(args, "painel", False)
+    if painel and getattr(args, "reprocessar", None):
+        raise ErroAgenda("--painel não pode ser combinado com --reprocessar.")
     if getattr(args, "reprocessar", None):
         relatorio = json.loads(args.reprocessar.read_text(encoding="utf-8"))
         if (not isinstance(relatorio, dict) or not isinstance(relatorio.get("agendas", relatorio.get("usuarios")), list)
@@ -713,12 +719,13 @@ def executar(args):
     salas = resolver_salas(getattr(args, "sala", None))
     creds, conta_servico = carregar_credenciais(args)
     inicio, fim = periodo_setembro(args.ano)
-    print(f"Período: {inicio} até {fim} (limite final exclusivo).")
-    print(f"Consultando diretamente {len(salas)} agenda(s) de sala de reunião...")
+    if not painel:
+        print(f"Período: {inicio} até {fim} (limite final exclusivo).")
+        print(f"Consultando diretamente {len(salas)} agenda(s) de sala de reunião...")
     with AuthorizedSession(creds, refresh_timeout=30) as sessao:
         args.saida.mkdir(parents=True, exist_ok=True)
         identificador = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-        caminho = args.saida / f"agenda-setembro-{args.ano}-{identificador}.json"
+        caminho = args.saida / f"agenda-setembro-{args.ano}-{'atual' if painel else identificador}.json"
         relatorio = {
             "ano": args.ano,
             "mes": 9,
@@ -733,15 +740,17 @@ def executar(args):
             "coleta_finalizada": False,
             "agendas": [],
         }
-        salvar_json(caminho, relatorio)
+        if not painel:
+            salvar_json(caminho, relatorio)
         for indice, sala in enumerate(salas, start=1):
             resultado = coletar_agenda(sessao, {"primaryEmail": sala["email"], "name": {"fullName": sala["nome"]}}, inicio, fim)
             resultado["tipo"] = "sala"
             relatorio["agendas"].append(resultado)
-            salvar_json(caminho, relatorio)
-            print(f"[{indice}/{len(salas)}] {sala['nome']}: {len(resultado['eventos'])} eventos; {resultado['status']}")
-            if resultado.get("erro"):
-                print(f"Não foi possível consultar a sala: {resultado['erro']}")
+            if not painel:
+                salvar_json(caminho, relatorio)
+                print(f"[{indice}/{len(salas)}] {sala['nome']}: {len(resultado['eventos'])} eventos; {resultado['status']}")
+                if resultado.get("erro"):
+                    print(f"Não foi possível consultar a sala: {resultado['erro']}")
 
     resultados = relatorio["agendas"]
     pendencias = sum(item["status"] != "ok" for item in resultados)
@@ -753,6 +762,20 @@ def executar(args):
         "agendas_com_acesso_limitado": sum(item["status"] == "acesso_limitado" for item in resultados),
         "total_eventos_por_agenda": sum(len(item["eventos"]) for item in resultados),
     }
+    if painel:
+        # Uma página incompleta não pode parecer remoção/cancelamento no painel.
+        # Reader é válido; a limitação de detalhes permanece registrada no JSON.
+        erros = [item for item in resultados if item["status"] == "erro"]
+        if erros:
+            raise ErroAgenda(
+                f"Não foi possível atualizar o painel: {len(erros)} agenda(s) com erro. "
+                "O snapshot anterior foi preservado. " + erros[0].get("erro", "Falha na consulta.")
+            )
+        gestao = analisar_salas(relatorio, getattr(args, "sala", None))
+        # Inclui resultados vazios válidos para refletir remoções e cancelamentos.
+        salvar_json(caminho, exportacao_da_sala(relatorio, gestao))
+        print(f"Snapshot do painel atualizado: {caminho}")
+        return 2 if pendencias else 0
     salvar_json(caminho, relatorio)
     print(f"Arquivo salvo: {caminho}")
     print(f"{len(resultados)} agendas consultadas; {pendencias} com erro ou acesso limitado.")
@@ -771,7 +794,10 @@ def main():
     except (OSError, ValueError, GoogleAuthError):
         print("Erro ao ler/salvar arquivos ou autenticar. Confira os caminhos, o formato das credenciais e a autorização.", file=sys.stderr)
     except KeyboardInterrupt:
-        print("Coleta interrompida. Consulte o JSON parcial em --saida, se já foi criado.", file=sys.stderr)
+        mensagem = ("Coleta interrompida. O snapshot anterior do painel foi preservado."
+                    if getattr(args, "painel", False) else
+                    "Coleta interrompida. Consulte o JSON parcial em --saida, se já foi criado.")
+        print(mensagem, file=sys.stderr)
         return 130
     return 1
 

@@ -6,7 +6,7 @@ import json
 import tempfile
 import unittest
 from copy import deepcopy
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -302,6 +302,132 @@ class TestAgendaSetembro(unittest.TestCase):
         self.assertEqual(relatorio["resumo"]["agendas_ok"], 2)
         self.assertEqual(relatorio["resumo"]["agendas_com_erro"], 1)
         self.assertEqual(relatorio["resumo"]["total_eventos_por_agenda"], 2)
+
+
+class TestSnapshotPainel(unittest.TestCase):
+    def evento(self, **campos):
+        evento = {
+            "id": "reserva", "iCalUID": "reserva@example.test", "summary": "Projeto",
+            "start": {"dateTime": "2026-09-10T09:00:00-03:00"},
+            "end": {"dateTime": "2026-09-10T10:00:00-03:00"},
+            "creator": {"email": "criador@example.test"},
+            "organizer": {"email": "organizador@example.test"},
+            "attendees": [{"email": "convidado@example.test", "responseStatus": "accepted"}],
+        }
+        evento.update(campos)
+        return evento
+
+    def coletar(self, pasta, *respostas, salas=None):
+        sessao, chamadas = sessao_com_respostas(*respostas)
+        args = SimpleNamespace(ano=2026, sala=salas, saida=Path(pasta), painel=True)
+        terminal, erros = io.StringIO(), io.StringIO()
+        with (
+            patch.object(agenda, "argumentos", return_value=args),
+            patch.object(agenda, "carregar_credenciais", return_value=(object(), None)),
+            patch.object(agenda, "AuthorizedSession", return_value=sessao),
+            patch.object(agenda, "listar_usuarios", side_effect=AssertionError("Não consultar Directory")),
+            patch.object(agenda, "salvar_gestao_sala", side_effect=AssertionError("Não gerar Markdown")),
+            patch.object(agenda, "salvar_json", wraps=agenda.salvar_json) as salvar,
+            redirect_stdout(terminal), redirect_stderr(erros),
+        ):
+            codigo = agenda.main()
+        return codigo, terminal.getvalue(), erros.getvalue(), salvar, chamadas
+
+    def test_edicoes_refletidas_em_um_unico_snapshot_sem_checkpoint_ou_markdown(self):
+        original = self.evento()
+        editado = self.evento(summary="Projeto revisado", description="Pauta atualizada",
+                             start={"dateTime": "2026-09-11T14:30:00-03:00"},
+                             end={"dateTime": "2026-09-11T16:00:00-03:00"},
+                             attendees=[{"email": "novo@example.test", "responseStatus": "tentative"}])
+        with tempfile.TemporaryDirectory(prefix="teste-snapshot-") as pasta:
+            caminho = Path(pasta) / "agenda-setembro-2026-atual.json"
+            for evento in (original, editado):
+                codigo, terminal, _, salvar, chamadas = self.coletar(
+                    pasta, resposta(200, {"accessRole": "owner", "items": [evento]}))
+                self.assertEqual(codigo, 0)
+                self.assertNotIn(evento["summary"], terminal)
+                salvar.assert_called_once()
+                self.assertTrue(salvar.call_args.args[1]["coleta_finalizada"])
+                self.assertEqual(salvar.call_args.args[1]["formato"], "eventos_das_salas_v2")
+                self.assertEqual(len(chamadas), 1)
+                self.assertEqual(list(Path(pasta).iterdir()), [caminho])
+            relatorio = json.loads(caminho.read_text(encoding="utf-8"))
+        eventos = relatorio["gestao_sala"]["eventos_na_sala"]
+        self.assertEqual(len(eventos), 1)
+        self.assertEqual(eventos[0]["nome"], "Projeto revisado")
+        self.assertEqual(eventos[0]["inicio"], "2026-09-11T14:30:00-03:00")
+        self.assertEqual(eventos[0]["fim"], "2026-09-11T16:00:00-03:00")
+        self.assertEqual(eventos[0]["descricao"], "Pauta atualizada")
+        self.assertEqual(relatorio["agendas"][0]["eventos"], [editado])
+        self.assertEqual(relatorio["emails_vinculados"], ["criador@example.test", "novo@example.test", "organizador@example.test"])
+
+    def test_coleta_vazia_ou_cancelada_substitui_reservas_antigas(self):
+        with tempfile.TemporaryDirectory(prefix="teste-snapshot-vazio-") as pasta:
+            caminho = Path(pasta) / "agenda-setembro-2026-atual.json"
+            for restantes in ([], [self.evento(status="cancelled")]):
+                with self.subTest(restantes=restantes):
+                    self.coletar(pasta, resposta(200, {"accessRole": "owner", "items": [self.evento()]}))
+                    codigo, _, _, salvar, _ = self.coletar(pasta, resposta(200, {"accessRole": "owner", "items": restantes}))
+                    self.assertEqual(codigo, 0)
+                    salvar.assert_called_once()
+                    relatorio = json.loads(caminho.read_text(encoding="utf-8"))
+                    self.assertTrue(relatorio["coleta_finalizada"])
+                    self.assertEqual(relatorio["gestao_sala"]["eventos_na_sala"], [])
+                    self.assertEqual(relatorio["agendas"][0]["eventos"], [])
+                    self.assertEqual(relatorio["emails_vinculados"], [])
+
+    def test_reader_e_valido_preserva_aviso_e_retorna_2(self):
+        with tempfile.TemporaryDirectory(prefix="teste-snapshot-reader-") as pasta:
+            codigo, _, erros, salvar, _ = self.coletar(
+                pasta, resposta(200, {"accessRole": "reader", "items": [self.evento()]}))
+            relatorio = json.loads((Path(pasta) / "agenda-setembro-2026-atual.json").read_text(encoding="utf-8"))
+        self.assertEqual(codigo, 2)
+        self.assertEqual(erros, "")
+        salvar.assert_called_once()
+        self.assertEqual(relatorio["agendas"][0]["status"], "acesso_limitado")
+        self.assertTrue(relatorio["agendas"][0]["aviso"])
+        self.assertFalse(relatorio["completo_para_salas_selecionadas"])
+        self.assertTrue(relatorio["coleta_finalizada"])
+        self.assertEqual(len(relatorio["gestao_sala"]["eventos_na_sala"]), 1)
+
+    def test_falha_na_pagina_seguinte_preserva_snapshot_sem_gravar_parcial(self):
+        with tempfile.TemporaryDirectory(prefix="teste-snapshot-parcial-") as pasta:
+            caminho = Path(pasta) / "agenda-setembro-2026-atual.json"
+            self.coletar(pasta, resposta(200, {"accessRole": "owner", "items": [self.evento()]}))
+            anterior = caminho.read_bytes()
+            codigo, _, erros, salvar, chamadas = self.coletar(
+                pasta,
+                resposta(200, {"accessRole": "owner", "items": [self.evento(summary="Parcial")], "nextPageToken": "p2"}),
+                resposta(403, {"error": {"errors": [{"reason": "forbidden"}]}}),
+            )
+            self.assertEqual(caminho.read_bytes(), anterior)
+            self.assertEqual(list(Path(pasta).iterdir()), [caminho])
+        self.assertEqual(codigo, 1)
+        self.assertEqual(len(chamadas), 2)
+        self.assertIn("snapshot anterior foi preservado", erros)
+        salvar.assert_not_called()
+
+    def test_uma_sala_com_erro_impede_publicacao_de_todas_as_salas(self):
+        salas = ["primeira@resource.calendar.google.com", "segunda@resource.calendar.google.com"]
+        with tempfile.TemporaryDirectory(prefix="teste-snapshot-multisalas-") as pasta:
+            codigo, _, _, salvar, chamadas = self.coletar(
+                pasta,
+                resposta(200, {"accessRole": "owner", "items": [self.evento()]}),
+                resposta(404, {"error": {"errors": [{"reason": "notFound"}]}}),
+                salas=salas,
+            )
+            self.assertEqual(list(Path(pasta).iterdir()), [])
+        self.assertEqual(codigo, 1)
+        self.assertEqual(len(chamadas), 2)
+        salvar.assert_not_called()
+
+    def test_painel_rejeita_reprocessamento_sem_ler_arquivo(self):
+        with patch.object(agenda.sys, "argv", [str(SCRIPT), "--painel", "--reprocessar", "inexistente.json"]):
+            with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as exc:
+                agenda.argumentos()
+        self.assertEqual(exc.exception.code, 2)
+        with self.assertRaisesRegex(agenda.ErroAgenda, "--painel não pode"):
+            agenda.executar(SimpleNamespace(painel=True, reprocessar=Path("inexistente.json")))
 
 
 class TestGestaoSala(unittest.TestCase):

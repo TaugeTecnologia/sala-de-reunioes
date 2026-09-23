@@ -119,6 +119,26 @@ As exportações antigas permanecem com seu conteúdo original.
   acesso limitado em uma sala, 130 para interrupção. Falhas transitórias recebem
   até cinco tentativas.
 
+## Atualização automática do painel
+
+O site `painel-salas` executa o coletor com `--painel` a cada 15 segundos entre
+consultas enquanto houver uma aba conectada. Você também pode testar uma coleta
+única nesse formato:
+
+```powershell
+python .\trazer-agenda-de-setembro.py --ano 2026 --painel
+```
+
+Esse modo atualiza somente `exportacoes/agenda-setembro-2026-atual.json`, no mesmo
+formato `eventos_das_salas_v2`, sem gerar Markdown ou arquivos datados. O arquivo
+só é substituído atomicamente depois da coleta concluída. Qualquer erro em sala
+ou página mantém o snapshot anterior. Uma coleta válida sem eventos substitui a
+anterior, refletindo remoções e cancelamentos. Acesso limitado continua com aviso
+e código 2; falha na coleta retorna 1. Não combine `--painel` com `--reprocessar`.
+
+O painel recebe os resultados automaticamente; não é necessário executar o script
+à mão ou recarregar a página. O período continua sendo setembro do ano selecionado.
+
 ## Reprocessar um arquivo existente
 
 ```powershell
