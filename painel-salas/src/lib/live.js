@@ -41,7 +41,7 @@ export function connectionLabel(connection, state) {
   if (connection !== 'conectado') return 'Conectando atualização automática…';
   if (state?.estado === 'erro') return 'Falha na consulta · nova tentativa automática';
   if (state?.estado === 'executando') return 'Consultando o Google Calendar…';
-  return `Atualização automática · intervalo de ${state?.intervaloSegundos || 15}s`;
+  return `Atualização automática · intervalo de ${state?.intervaloSegundos || 2}s`;
 }
 
 export function shouldAcceptAgenda(incoming, current) {

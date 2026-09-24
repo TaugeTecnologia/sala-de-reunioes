@@ -1,6 +1,6 @@
 // One monitor is shared by every tab. Google is consulted only for connected years;
 // the sync controller serializes these requests with explicit manual refreshes.
-export function createRealtimeMonitor({ sync, load, intervalMs = 15_000, maximumDelayMs = 120_000, now = Date.now, setTimer = setTimeout, clearTimer = clearTimeout } = {}) {
+export function createRealtimeMonitor({ sync, load, intervalMs = 2_000, maximumDelayMs = 120_000, now = Date.now, setTimer = setTimeout, clearTimer = clearTimeout } = {}) {
   const periods = new Map();
   let stopped = false;
   const initialState = (year) => ({ estado: 'ocioso', ano: year, iniciadoEm: null, finalizadoEm: null, mensagem: 'A atualização automática está ativa enquanto o painel estiver aberto.' });
@@ -8,6 +8,10 @@ export function createRealtimeMonitor({ sync, load, intervalMs = 15_000, maximum
     if (!periods.has(year)) periods.set(year, { year, clients: new Set(), agenda: null, fingerprint: null, state: initialState(year), failures: 0, due: null, lastQuery: null, timer: null, initialized: false, loading: null });
     return periods.get(year);
   };
+  // A coleta normal fica mais rápida; falhas continuam recuando 30/60/120s.
+  const delayFor = (entry) => entry.failures
+    ? Math.min(maximumDelayMs, Math.max(15_000, intervalMs) * 2 ** Math.min(entry.failures, 8))
+    : intervalMs;
   const stateOf = (entry) => ({
     ...entry.state, ano: entry.year, intervaloSegundos: intervalMs / 1000,
     proximaConsultaEm: entry.due === null ? null : new Date(entry.due).toISOString(),
@@ -49,7 +53,7 @@ export function createRealtimeMonitor({ sync, load, intervalMs = 15_000, maximum
       entry.lastQuery = state.finalizadoEm || new Date(now()).toISOString();
       entry.failures = state.estado === 'erro' ? entry.failures + 1 : 0;
       if (agenda) emitAgenda(entry, agenda);
-      schedule(entry, Math.min(maximumDelayMs, intervalMs * 2 ** Math.min(entry.failures, 8)));
+      schedule(entry, delayFor(entry));
     }
     send(entry, 'estado', stateOf(entry));
   });
@@ -64,7 +68,7 @@ export function createRealtimeMonitor({ sync, load, intervalMs = 15_000, maximum
     entry.loading = null;
     if (stopped || !entry.clients.size || sync.getState(entry.year).estado === 'executando') return;
     const latest = Date.parse(entry.lastQuery || entry.agenda?.geradoEm);
-    const delay = Math.min(maximumDelayMs, intervalMs * 2 ** Math.min(entry.failures, 8));
+    const delay = delayFor(entry);
     const remaining = Number.isFinite(latest) ? delay - (now() - latest) : 0;
     schedule(entry, remaining);
     send(entry, 'estado', stateOf(entry));
@@ -81,7 +85,7 @@ export function createRealtimeMonitor({ sync, load, intervalMs = 15_000, maximum
         entry.loading ||= initialize(entry);
       } else if (firstClient && sync.getState(year).estado !== 'executando') {
         const latest = Date.parse(entry.lastQuery || entry.agenda?.geradoEm);
-        const delay = Math.min(maximumDelayMs, intervalMs * 2 ** Math.min(entry.failures, 8));
+        const delay = delayFor(entry);
         schedule(entry, Number.isFinite(latest) ? delay - (now() - latest) : 0);
         listener('estado', stateOf(entry));
       }

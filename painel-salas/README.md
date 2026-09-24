@@ -22,9 +22,50 @@ As dependências já foram preparadas nesta máquina; basta `npm.cmd run dev`.
 
 ## O que aparece
 
-- **Visão geral:** quantidade de eventos, horas agendadas, convidados únicos,
-  calendário mensal e próximos encontros disponíveis na exportação.
-- **Agenda:** busca por evento ou pessoa, filtros de data, sala e confirmação.
+- **Visão geral:** situação atual da sala, próxima reunião, dia da semana e data
+  de hoje, quantidade de salas acompanhadas e lista de reuniões do dia com abas
+  Atuais e Histórico.
+- **Calendário semanal na Agenda:** segunda a sábado, com dia/data no cabeçalho e as 24
+  horas à esquerda. Ao abrir e na virada do dia, a rolagem destaca a hora atual,
+  com contexto anterior e espaço para os próximos horários. A rolagem manual
+  permanece livre e não é reposicionada a cada atualização dos eventos.
+  Em telas pequenas também é possível deslizar
+  na horizontal. Abre na semana atual, com botões **Semana anterior** e
+  **Próxima semana**. A navegação mantém a posição da rolagem; o destaque de hoje
+  e a linha da hora atual aparecem somente na data real de Brasília.
+  Eventos simultâneos ficam lado a lado, reuniões que atravessam a
+  meia-noite aparecem nos dias correspondentes e eventos de dia inteiro têm uma
+  faixa própria. Clicar no evento abre seus detalhes; clicar na data filtra o dia.
+  O campo Data leva o calendário à semana escolhida. Os botões de semana removem
+  o filtro de dia, mantendo a busca, a sala e a situação da reserva.
+  Dias fora do período coletado ficam marcados como sem dados.
+- **Agenda:** calendário semanal com busca por evento ou pessoa e filtros de data,
+  sala e confirmação, substituindo a antiga tabela de eventos.
+- **Lista de reuniões:** na visão geral, mostra somente reuniões que ocupam alguma
+  parte do dia atual em Brasília, incluindo dia inteiro e passagem da meia-noite.
+  As colunas são **Horário / data**, **Evento**, **Organizador**, **Convidados** e
+  **Situação**. Os convidados aparecem por nome; listas longas são resumidas no
+  modo compacto e exibidas completas ao expandir ou abrir os detalhes do evento.
+  As duas abas mostram faixas de **00:00 a 23:00**, inclusive sem eventos.
+  Nas faixas sem reunião na aba selecionada, somente horário e data aparecem;
+  as demais colunas ficam em branco, sem indicação de disponibilidade.
+  A aba **Atuais** exibe reuniões em andamento e futuras; **Histórico** exibe
+  as encerradas hoje. O início e fim reais aparecem junto ao nome do evento,
+  sem arredondamento. Reuniões que atravessam uma hora ficam identificadas como
+  continuação na faixa seguinte, sem aumentar a contagem de reuniões.
+  As contagens e a separação
+  acompanham o relógio a cada segundo; a reunião muda de aba no horário de término.
+  À meia-noite a lista muda automaticamente para o novo dia. Eventos sem intervalo
+  válido não são atribuídos a hoje; os dados originais são preservados.
+  Na visão geral, a área recolhida tem altura fixa para quatro linhas,
+  mesmo quando há menos reuniões ou nenhuma. As abas Atuais e Histórico ficam
+  junto ao título e mantêm a mesma altura ao alternar. A rolagem dá acesso às demais
+  reuniões, com rodapé compacto junto à base do card.
+  Todas as reuniões permanecem na lista. O botão **Exibir tudo** fica sempre
+  visível e expande a lista da aba selecionada; **Recolher lista** restaura a rolagem.
+  Abrir a lista, recolher ou trocar de aba posiciona a rolagem perto da hora atual.
+  A rolagem manual permanece livre durante as atualizações. **Exibir tudo** mostra
+  todas as faixas do dia mesmo sem reuniões.
 - **Sala de reunião:** dados da sala e as pessoas vinculadas aos seus eventos.
 - **Detalhes do evento:** início/fim, criador, organizador, descrição, convidados,
   respostas ao convite, acompanhantes e situação da reserva.
@@ -47,13 +88,13 @@ não são apresentados. Se a última tentativa falhar, preserva os dados acessí
 da coleta anterior e informa essa condição.
 
 - Ao abrir o painel, inicia o acompanhamento do ano selecionado. O servidor
-  consulta a agenda da sala em intervalos de **15 segundos entre consultas**,
+  consulta a agenda da sala em intervalos de **2 segundos entre consultas**,
   mais o tempo necessário para a resposta do Google.
 - Cada nova coleta é enviada ao navegador por **Server-Sent Events (SSE)**.
   Criações, edições, mudanças de horário e cancelamentos aparecem sem F5 ou clique.
   Uma coleta válida vazia também limpa os eventos que deixaram de existir.
-- **Atualizar agora** antecipa a próxima consulta. **Recarregar dados** relê os
-  dados locais, sem iniciar uma consulta separada ao Google.
+- O primeiro cartão compara o relógio com os eventos **a cada segundo**, sem
+  depender de outra consulta para mudar no início ou fim de uma reserva conhecida.
 - Várias abas compartilham a coleta; há somente um processo Python por vez.
   Anos diferentes são atendidos em fila. Ao fechar todas as abas, não são
   agendadas novas consultas automáticas.
@@ -76,7 +117,7 @@ a consulta. Não gera um novo par JSON/Markdown a cada atualização. Se alguma 
 ou página falhar, mantém o arquivo anterior. As exportações convencionais continuam
 disponíveis para uso manual do script.
 
-O botão de atualização usa o token existente. Se precisar renovar a autorização,
+A atualização automática usa o token existente. Se precisar renovar a autorização,
 faça isso no terminal, na pasta do coletor:
 
 ```powershell
@@ -97,6 +138,36 @@ npm.cmd run dev
 
 ## Significado dos indicadores
 
+**Hoje:** dia da semana e data atual no fuso de Brasília (UTC-03:00). Acompanha
+o relógio do computador e muda automaticamente à meia-noite, independentemente
+do ano selecionado para a agenda. Os quatro cartões usam texto principal de 20 px,
+com rótulos e informações complementares de 11 px.
+
+**Próxima reunião:** nome, data e horários de início/fim da próxima reserva
+confirmada da sala que ainda não começou, dentro do período consultado. O cartão
+é recalculado a cada segundo e avança quando a reunião começa. Se não houver
+outra reserva futura, mostra “Nenhuma reunião prevista”. Eventos de dia inteiro
+aparecem com essa indicação, sem inventar horários.
+
+**Situação da sala agora:** `Ocupado` quando existe uma reserva confirmada da
+primeira sala acompanhada com `início <= agora < fim`; `Livre` nos demais horários
+cobertos pelos dados atuais. Reservas recusadas, pendentes, canceladas ou marcadas
+como livres não ocupam a sala. Sobreposições e reuniões consecutivas mantêm o
+estado ocupado. Datas de dia inteiro respeitam o fim exclusivo e UTC-03:00.
+
+O cartão usa a hora do computador e é recalculado a cada segundo enquanto a aba
+está ativa; ao voltar a uma aba suspensa, confere imediatamente o relógio novamente.
+O indicador descreve a agenda, não detecta presença física. Se a conexão cair, a
+consulta falhar, o snapshot tiver 30 segundos ou mais, ou o horário atual estiver
+fora de setembro do ano consultado, exibe `—` com o motivo em vez de afirmar que
+a sala está livre. A lista de reuniões permanece disponível.
+
+Criações/edições no Google entram após a próxima coleta: **2 segundos de espera
+mais o tempo de resposta do Google e do coletor**. O código Python permanece
+inalterado. A consulta é compartilhada entre abas e não abre processos simultâneos.
+Falhas continuam usando intervalos de 30, 60 e até 120 segundos antes de tentar
+novamente, preservando os limites da API.
+
 As horas representam a união dos intervalos confirmados por sala dentro do mês,
 evitando somar horários sobrepostos em duplicidade. Não são uma taxa de ocupação
 nem prova de uso físico do espaço.
@@ -115,6 +186,7 @@ painel-salas/
 ├── src/styles.css          Visual responsivo
 ├── src/lib/agenda.js       Datas, filtros, calendário e métricas
 ├── src/lib/live.js         Conexão automática e reconexão da tela
+├── src/lib/clock.js        Relógio por segundo e retomada da aba
 ├── server/app.mjs          API local, exportações e sincronização
 ├── server/realtime.mjs     Acompanhamento dos anos conectados e intervalos
 ├── server/index.mjs        Inicialização do servidor

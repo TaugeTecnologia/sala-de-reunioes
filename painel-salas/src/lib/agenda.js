@@ -8,7 +8,7 @@ function text(value) {
   return String(value ?? '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
 }
 
-function timestamp(value) {
+export function timestamp(value) {
   if (value === null || value === undefined || value === '') return NaN;
   if (value instanceof Date) return value.getTime();
   if (typeof value === 'number') return value;
@@ -59,6 +59,38 @@ export function eventStatus(event, now = new Date()) {
   return { label: 'Previsto', tone: 'blue' };
 }
 
+/** Todas as reuniões: em andamento, futuras, passadas e horários desconhecidos. */
+export function orderMeetings(events, now = Date.now()) {
+  const current = timestamp(now);
+  const temporal = event => {
+    const start = timestamp(event.inicio);
+    const end = timestamp(event.fim);
+    const valid = [current, start, end].every(Number.isFinite) && end > start;
+    const group = !valid ? 3 : current >= end ? 2 : current >= start ? 0 : 1;
+    return { event, start, end, group };
+  };
+  return events.map(temporal).sort((a, b) => {
+    if (a.group !== b.group) return a.group - b.group;
+    if (a.group === 3) return 0;
+    if (a.group === 2) return b.end - a.end || b.start - a.start;
+    return a.start - b.start;
+  }).map(item => item.event);
+}
+
+/** Divide a apresentação pelo fim da reunião, preservando todos os registros. */
+export function splitMeetings(events, now = Date.now()) {
+  const current = timestamp(now);
+  const groups = { atuais: [], historico: [] };
+  for (const event of orderMeetings(events, now)) {
+    const start = timestamp(event.inicio);
+    const end = timestamp(event.fim);
+    const finished = [current, start, end].every(Number.isFinite) && end > start && end <= current;
+    // Sem um intervalo válido, não presumimos que a reunião terminou.
+    groups[finished ? 'historico' : 'atuais'].push(event);
+  }
+  return groups;
+}
+
 function overlaps(event, start, end) {
   const eventStart = timestamp(event.inicio);
   const eventEnd = timestamp(event.fim);
@@ -97,6 +129,40 @@ export function filterEvents(events, { busca = '', data = '', sala = '', status 
   });
 }
 
+function localDayStart(now) {
+  const current = timestamp(now);
+  if (!Number.isFinite(current)) return NaN;
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
+    timeZone: TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(current).map(part => [part.type, part.value]));
+  return timestamp(`${parts.year}-${parts.month}-${parts.day}`);
+}
+
+/** Reuniões que ocupam alguma parte de hoje no fuso do painel. */
+export function todaysMeetings(events, now = Date.now()) {
+  const start = localDayStart(now);
+  return Number.isFinite(start) ? events.filter(event => overlaps(event, start, start + DAY)) : [];
+}
+
+/** Faixas visuais do dia; continuações não são novas reuniões. */
+export function hourlyMeetings(events, now = Date.now(), allEvents = events) {
+  const dayStart = localDayStart(now);
+  if (!Number.isFinite(dayStart)) return [];
+  const intervals = events.map(event => ({ event, start: timestamp(event.inicio), end: timestamp(event.fim) }))
+    .filter(item => Number.isFinite(item.start) && Number.isFinite(item.end) && item.end > item.start)
+    .sort((a, b) => a.start - b.start || a.end - b.end);
+  return Array.from({ length: 24 }, (_, hour) => {
+    const start = dayStart + hour * 60 * MINUTE;
+    const end = start + 60 * MINUTE;
+    return {
+      start, end,
+      hasAnyMeeting: allEvents.some(event => overlaps(event, start, end)),
+      entries: intervals.filter(item => item.start < end && item.end > start)
+        .map(item => ({ event: item.event, continuation: item.start < start })),
+    };
+  });
+}
+
 /** Mês de 1 a 12; grade de semanas completas, iniciando na segunda-feira. */
 export function monthDays(ano, mes) {
   if (!Number.isInteger(ano) || ano < 100 || ano > 9999 || !Number.isInteger(mes) || mes < 1 || mes > 12) {
@@ -128,6 +194,60 @@ function uniqueEvents(events) {
     seen.add(key);
     return true;
   });
+}
+
+function confirmedRoomReservations(data) {
+  const room = data?.salas?.[0];
+  if (!room || !Array.isArray(data.eventos)) return [];
+  const key = roomKey(room);
+  return uniqueEvents(data.eventos).filter(event => {
+    if (event.bloqueio_confirmado !== true || event.status === 'cancelled' || event.transparency === 'transparent') return false;
+    if (event.salas?.length) {
+      return event.salas.some(linked => roomKey(linked) === key && !['declined', 'tentative', 'needsAction'].includes(linked.resposta));
+    }
+    return key && (text(event.agenda_copia_utilizada) === key || (event.agendas_origem ?? []).some(id => text(id) === key));
+  });
+}
+
+/** Próxima reserva que ainda vai começar na sala, dentro do período consultado. */
+export function nextRoomMeeting(data, now = Date.now()) {
+  const current = timestamp(now);
+  const periodStart = timestamp(data?.periodo?.inicio);
+  const periodEnd = timestamp(data?.periodo?.fim);
+  if (![current, periodStart, periodEnd].every(Number.isFinite)) return null;
+  return confirmedRoomReservations(data)
+    .filter(event => timestamp(event.inicio) > current && overlaps(event, periodStart, periodEnd))
+    .sort((a, b) => timestamp(a.inicio) - timestamp(b.inicio))[0] || null;
+}
+
+/** Disponibilidade segundo as reservas da sala, nunca prova de presença física. */
+export function roomAvailability(data, now = Date.now(), { connection = 'conectado', queryState, maxAgeMs = 30_000 } = {}) {
+  const unavailable = (reason) => ({ label: '—', occupied: null, reason });
+  const current = timestamp(now);
+  const start = timestamp(data?.periodo?.inicio);
+  const end = timestamp(data?.periodo?.fim);
+  if (![current, start, end].every(Number.isFinite) || current < start || current >= end) {
+    return unavailable('O horário atual está fora do período consultado.');
+  }
+  const room = data?.salas?.[0];
+  if (!room || !['ok', 'acesso_limitado'].includes(room.status) || !Array.isArray(data.eventos)) {
+    return unavailable('Aguardando os dados da sala.');
+  }
+  const generated = timestamp(data.geradoEm);
+  if (connection !== 'conectado' || queryState?.estado === 'erro'
+      || !Number.isFinite(generated) || current - generated >= maxAgeMs || generated - current > 5_000) {
+    return unavailable('Aguardando uma consulta atualizada.');
+  }
+  const reservations = confirmedRoomReservations(data);
+  if (reservations.some(event => !Number.isFinite(timestamp(event.inicio)) || !Number.isFinite(timestamp(event.fim)) || timestamp(event.fim) <= timestamp(event.inicio))) {
+    return unavailable('Há uma reserva com horário indisponível.');
+  }
+  // Início inclusivo e fim exclusivo: muda no início/fim sem esperar outra coleta.
+  const occupied = reservations.some(event => timestamp(event.inicio) <= current && current < timestamp(event.fim));
+  return {
+    label: occupied ? 'Ocupado' : 'Livre', occupied,
+    reason: occupied ? 'Reserva em andamento na sala.' : 'Nenhuma reserva neste horário.',
+  };
 }
 
 function unionMinutes(intervals) {

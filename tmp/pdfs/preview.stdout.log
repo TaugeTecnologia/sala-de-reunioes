@@ -1,0 +1,19 @@
+Painel de salas: http://127.0.0.1:8787
+
+  VITE v7.3.6  ready in 706 ms
+
+  ➜  Local:   http://127.0.0.1:5175/
+14:59:16 [vite] (client) page reload src/lib/agenda.js
+14:59:18 [vite] (client) page reload src/App.jsx
+14:59:20 [vite] (client) hmr update /src/tauge.css
+15:07:51 [vite] (client) hmr update /src/tauge.css
+15:33:13 [vite] (client) page reload src/App.jsx
+15:33:14 [vite] (client) hmr update /src/tauge.css
+16:13:00 [vite] (client) hmr update /src/tauge.css
+16:19:03 [vite] (client) page reload src/App.jsx
+16:19:04 [vite] (client) hmr update /src/tauge.css
+16:21:16 [vite] (client) page reload src/App.jsx
+16:21:17 [vite] (client) hmr update /src/tauge.css
+16:31:46 [vite] (client) page reload src/lib/agenda.js
+16:31:47 [vite] (client) page reload src/App.jsx
+16:31:48 [vite] (client) hmr update /src/tauge.css

@@ -74,7 +74,8 @@ test('troca de ano fecha conexão antiga e ignora mensagens atrasadas ou malform
 });
 
 test('identifica conexão e frequência sem anunciar atualização instantânea', () => {
-  assert.match(connectionLabel('conectado', { estado: 'concluido', intervaloSegundos: 15 }), /15s/);
+  assert.match(connectionLabel('conectado', { estado: 'concluido', intervaloSegundos: 2 }), /2s/);
+  assert.match(connectionLabel('conectado', { estado: 'concluido' }), /2s/);
   assert.match(connectionLabel('conectado', { estado: 'executando' }), /Consultando/);
   assert.match(connectionLabel('conectado', { estado: 'erro' }), /Falha/);
   assert.match(connectionLabel('reconectando'), /Conexão interrompida/);

@@ -63,7 +63,7 @@ test('duas abas compartilham a consulta automática e recebem alteração e excl
   assert.deepEqual(sync.starts, [2026]);
   sync.finish(2026, agenda(2026, timer.now(), ['Projeto atualizado', 'Nova reunião']));
   for (const messages of [first, second]) assert.equal(messages.filter((event) => event.type === 'agenda').at(-1).value.eventos.length, 2);
-  timer.advance(14_999);
+  timer.advance(1_999);
   assert.equal(sync.starts.length, 1);
   timer.advance(1);
   assert.equal(sync.starts.length, 2);
@@ -90,7 +90,7 @@ test('desconectar a última aba remove a consulta agendada; reconectar reproduz 
   const received = [];
   const leaveAgain = monitor.subscribe(2026, (event, data) => received.push({ event, data }));
   assert.deepEqual(received.find((item) => item.event === 'agenda').data, cached);
-  assert.equal(received.find((item) => item.event === 'estado').data.intervaloSegundos, 15);
+  assert.equal(received.find((item) => item.event === 'estado').data.intervaloSegundos, 2);
   timer.advance(0);
   assert.deepEqual(sync.starts, [2026]);
   leaveAgain();
@@ -98,7 +98,7 @@ test('desconectar a última aba remove a consulta agendada; reconectar reproduz 
   assert.equal(sync.subscribers(), 0);
 });
 
-test('falhas mantêm a agenda visível e recuam 30s, 60s, 120s; sucesso restaura 15s', async () => {
+test('falhas mantêm a agenda visível e recuam 30s, 60s, 120s; sucesso restaura 2s', async () => {
   const timer = clock(), sync = fakeSync(timer), received = [];
   const monitor = createRealtimeMonitor({ sync, ...timer, load: async () => agenda(2026, timer.now() - 60_000) });
   monitor.subscribe(2026, (event, data) => received.push({ event, data }));
@@ -117,7 +117,7 @@ test('falhas mantêm a agenda visível e recuam 30s, 60s, 120s; sucesso restaura
   }
   assert.equal(received.filter((item) => item.event === 'agenda').length, 1);
   sync.finish(2026, agenda(2026, timer.now()));
-  assert.equal(Date.parse(monitor.getState(2026).proximaConsultaEm) - timer.now(), 15_000);
+  assert.equal(Date.parse(monitor.getState(2026).proximaConsultaEm) - timer.now(), 2_000);
   monitor.stop();
 });
 
@@ -134,7 +134,7 @@ test('assinaturas isolam anos, iniciam sem exportação e não enviam dados de o
   assert.equal(second.filter((message) => message.event === 'agenda').length, 0);
   leave1();
   sync.finish(2027, agenda(2027, timer.now()));
-  timer.advance(15_000);
+  timer.advance(2_000);
   assert.deepEqual(sync.starts, [2026, 2027, 2027]);
   leave2();
   monitor.stop();
