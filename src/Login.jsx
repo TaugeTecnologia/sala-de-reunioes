@@ -75,7 +75,7 @@ export default function Login({ config, onAuthenticated, offline = false, onRetr
         <img className="login-symbol" src={`${import.meta.env.BASE_URL}brand/tauge-symbol.svg`} alt="" width="46" height="46" draggable={false}/>
         <h2>Entrar</h2>
         <p className="login-lead">Acesse com seu e-mail institucional da Tauge.</p>
-        <div className="login-error" role="alert" aria-live="assertive">{offline ? 'O servidor de acesso está indisponível no momento, por isso não é possível entrar agora.' : error}</div>
+        <div className="login-error" role="alert" aria-live="assertive">{offline ? 'O servidor de acesso está indisponível no momento, por isso não é possível entrar agora. Tentando reconectar automaticamente…' : error}</div>
         {offline && <button type="button" className="login-retry" onClick={onRetry}>Tentar novamente</button>}
         <label htmlFor="login-email">E-mail institucional</label>
         <input id="login-email" type="email" inputMode="email" autoComplete="username" autoFocus required value={email} onChange={event => setEmail(event.target.value)} placeholder={`nome@${domain}`} disabled={busy || offline}/>

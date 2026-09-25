@@ -2,6 +2,9 @@ import React, { useCallback, useEffect, useState } from 'react';
 import App from './App.jsx';
 import Login from './Login.jsx';
 import { apiFetch } from './lib/api.js';
+import { useAutoUpdate } from './lib/autoUpdate.js';
+
+const RETRY_MS = 10_000;
 
 export default function Root() {
   const [state, setState] = useState({ status: 'carregando', config: null, usuario: null });
@@ -11,7 +14,14 @@ export default function Root() {
     .then(session => setState({ status: session.autenticado ? 'autenticado' : 'anonimo', config: session, usuario: session.usuario }))
     .catch(() => setState(previous => ({ ...previous, status: 'erro' }))), []);
 
+  useAutoUpdate();
   useEffect(() => { refresh(); }, [refresh]);
+  // Servidor indisponível: tenta de novo sozinho até voltar, sem precisar de F5.
+  useEffect(() => {
+    if (state.status !== 'erro') return undefined;
+    const timer = setInterval(refresh, RETRY_MS);
+    return () => clearInterval(timer);
+  }, [state.status, refresh]);
   useEffect(() => {
     const expired = () => setState(previous => previous.status === 'autenticado' ? { ...previous, status: 'anonimo', usuario: null } : previous);
     window.addEventListener('sessao-expirada', expired);
