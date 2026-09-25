@@ -3,6 +3,7 @@ import { HttpError } from './http-error.mjs';
 
 export const COOKIE_NAME = 'sala_sessao';
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+const TICKET_TTL_MS = 60 * 1000;
 const GOOGLE_ISSUERS = new Set(['accounts.google.com', 'https://accounts.google.com']);
 
 const base64url = (value) => Buffer.from(value).toString('base64url');
@@ -29,19 +30,40 @@ export function createAuth({
     return { token: `${payload}.${sign(payload)}`, maxAge: Math.floor(ttlMs / 1000) };
   }
 
-  function readSession(request) {
-    const cookie = (request.headers.cookie || '').split(';').map((part) => part.trim()).find((part) => part.startsWith(`${COOKIE_NAME}=`));
-    if (!cookie) return null;
-    const [payload, signature] = cookie.slice(COOKIE_NAME.length + 1).split('.');
+  // Bilhete de curta duração, só para abrir o fluxo /api/eventos (EventSource não envia cabeçalhos).
+  function createTicket(email, nome) {
+    const payload = base64url(JSON.stringify({ e: email, n: nome || '', x: now() + TICKET_TTL_MS, t: 1 }));
+    return `${payload}.${sign(payload)}`;
+  }
+
+  function parseToken(token) {
+    if (typeof token !== 'string') return null;
+    const [payload, signature] = token.split('.');
     if (!payload || !signature) return null;
     const expected = Buffer.from(sign(payload));
     const received = Buffer.from(signature);
     if (expected.length !== received.length || !timingSafeEqual(expected, received)) return null;
     try {
       const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
-      if (typeof data.e !== 'string' || !(data.x > now())) return null;
-      return { email: data.e, nome: data.n || '' };
+      return typeof data.e === 'string' && data.x > now() ? data : null;
     } catch { return null; }
+  }
+
+  // A sessão vem no cabeçalho Authorization (funciona com o front em outro domínio, sem depender
+  // de cookies de terceiros) ou no cookie (painel aberto direto pelo servidor).
+  function readSession(request) {
+    const bearer = /^Bearer\s+(\S+)$/i.exec(request.headers.authorization || '')?.[1];
+    const cookie = (request.headers.cookie || '').split(';').map((part) => part.trim()).find((part) => part.startsWith(`${COOKIE_NAME}=`));
+    for (const token of [bearer, cookie?.slice(COOKIE_NAME.length + 1)]) {
+      const data = parseToken(token);
+      if (data && !data.t) return { email: data.e, nome: data.n || '' };
+    }
+    return null;
+  }
+
+  function readTicket(ticket) {
+    const data = parseToken(ticket);
+    return data?.t ? { email: data.e, nome: data.n || '' } : null;
   }
 
   // Front em outro domínio (GitHub Pages): o cookie precisa ser SameSite=None e Secure (HTTPS).
@@ -53,6 +75,9 @@ export function createAuth({
     googleClientId,
     publicConfig: () => ({ dominio: domain, googleClientId: googleClientId || null }),
     getSession: readSession,
+    createTicket,
+    readTicket,
+    renewSession: (session) => createSession(session.email, session.nome),
     cookieHeader,
     clearCookie: () => `${COOKIE_NAME}=; ${attributes}; Max-Age=0`,
 

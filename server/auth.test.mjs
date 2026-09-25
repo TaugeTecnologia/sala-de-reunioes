@@ -112,3 +112,32 @@ test('hosts iniciados por ponto valem para subdomínios', async (t) => {
   assert.equal(await status('trycloudflare.com.evil.example'), 403);
   assert.equal(await status('evil.example'), 403);
 });
+
+test('sessão por cabeçalho Authorization (sem cookie), bilhete do fluxo e renovação', async (t) => {
+  let time = 1_000_000;
+  const claims = { ...goodClaims(), exp: String(Math.floor((time + 3_600_000) / 1000)) };
+  const stub = { getState: () => ({ estado: 'ocioso' }), subscribe() { return () => {}; }, start() {}, cancelAutomatic() {}, stop() {} };
+  const { call, port } = await setup(t, { authOptions: { now: () => time, ttlMs: 10_000, fetchImpl: googleOk(claims) }, appOptions: { syncController: stub } });
+  const { token } = await (await call('/api/auth/google', { method: 'POST', body: { credential } })).json();
+  const bearer = (extra = {}) => ({ headers: { Authorization: `Bearer ${token}`, ...extra } });
+  assert.equal((await fetch(`http://127.0.0.1:${port}/api/agenda`, bearer())).status, 200);
+  assert.equal((await fetch(`http://127.0.0.1:${port}/api/agenda`, { headers: { Authorization: 'Bearer lixo' } })).status, 401);
+
+  // bilhete: só serve para abrir /api/eventos e não vale como sessão
+  const { ticket } = await (await fetch(`http://127.0.0.1:${port}/api/auth/ticket`, { method: 'POST', ...bearer() })).json();
+  assert.equal((await fetch(`http://127.0.0.1:${port}/api/agenda?ticket=${ticket}`)).status, 401);
+  assert.equal((await fetch(`http://127.0.0.1:${port}/api/agenda`, { headers: { Authorization: `Bearer ${ticket}` } })).status, 401);
+  const stream = await fetch(`http://127.0.0.1:${port}/api/eventos?ano=2026&mes=9&ticket=${ticket}`);
+  assert.equal(stream.status, 200);
+  await stream.body.cancel();
+  assert.equal((await fetch(`http://127.0.0.1:${port}/api/eventos?ano=2026&mes=9`)).status, 401);
+  time += 61_000;
+  assert.equal((await fetch(`http://127.0.0.1:${port}/api/eventos?ano=2026&mes=9&ticket=${ticket}`)).status, 401);
+
+  // renovação deslizante: a sessão original vence, mas a renovada segue valendo
+  time = 1_000_000 + 5_000;
+  const renewed = await (await fetch(`http://127.0.0.1:${port}/api/auth/renovar`, { method: 'POST', ...bearer() })).json();
+  time = 1_000_000 + 12_000;
+  assert.equal((await fetch(`http://127.0.0.1:${port}/api/agenda`, bearer())).status, 401);
+  assert.equal((await fetch(`http://127.0.0.1:${port}/api/agenda`, { headers: { Authorization: `Bearer ${renewed.token}` } })).status, 200);
+});

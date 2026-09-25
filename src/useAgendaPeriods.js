@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { apiFetch } from './lib/api.js';
+import { apiFetch, fetchTicket, getToken } from './lib/api.js';
 import { connectAgenda, shouldAcceptAgenda } from './lib/live.js';
 import { mergeAgendas, monthPeriod } from './lib/periods.js';
 
@@ -29,7 +29,7 @@ export function useAgendaPeriods(requested) {
         });
         setErrors(previous => ({ ...previous, [period.key]: '' }));
       };
-      const close = connectAgenda({ year: period.ano, month: period.mes,
+      const close = connectAgenda({ year: period.ano, month: period.mes, getTicket: getToken() ? fetchTicket : null,
         onAgenda: accept,
         onState: state => { if (active) setStates(previous => ({ ...previous, [period.key]: state })); },
         onConnection: connection => { if (active) setConnections(previous => ({ ...previous, [period.key]: connection })); },

@@ -2,16 +2,12 @@ import { periodAt } from './periods.js';
 import { API_BASE, apiUrl } from './api.js';
 
 /** Uma conexão por mês consultado; o servidor compartilha a coleta entre abas. */
-export function connectAgenda({ year, month = periodAt().mes, onAgenda, onState, onConnection, EventSourceClass = globalThis.EventSource }) {
+export function connectAgenda({ year, month = periodAt().mes, onAgenda, onState, onConnection, getTicket = null, EventSourceClass = globalThis.EventSource }) {
   let active = true;
-  let source;
+  let source = null;
+  let retry = null;
+  let detach = () => {};
   onConnection('conectando');
-  try {
-    source = new EventSourceClass(apiUrl(`/api/eventos?ano=${encodeURIComponent(year)}&mes=${encodeURIComponent(month)}`), API_BASE ? { withCredentials: true } : undefined);
-  } catch {
-    onConnection('indisponivel');
-    return () => { active = false; };
-  }
   const parse = (event) => {
     try { return JSON.parse(event.data); } catch { return null; }
   };
@@ -28,13 +24,44 @@ export function connectAgenda({ year, month = periodAt().mes, onAgenda, onState,
     onState(state);
   };
   const handleOpen = () => { if (active) onConnection('conectado'); };
-  const handleError = () => { if (active) onConnection('reconectando'); };
+  const scheduleReconnect = () => { if (active && getTicket && !retry) retry = setTimeout(() => { retry = null; connect(); }, 3000); };
+  const handleError = () => {
+    if (!active) return;
+    onConnection('reconectando');
+    // Com bilhete, uma conexão encerrada (bilhete vencido) precisa ser reaberta com um novo.
+    if (getTicket && source?.readyState === 2) { detach(); scheduleReconnect(); }
+  };
   const handlers = { agenda: handleAgenda, estado: handleState, open: handleOpen, error: handleError };
-  for (const [name, handler] of Object.entries(handlers)) source.addEventListener(name, handler);
+
+  async function connect() {
+    let suffix = '';
+    if (getTicket) {
+      try {
+        const ticket = await getTicket();
+        if (!active) return;
+        if (!ticket) { onConnection('reconectando'); return; }
+        suffix = `&ticket=${encodeURIComponent(ticket)}`;
+      } catch { if (active) { onConnection('reconectando'); scheduleReconnect(); } return; }
+    }
+    try {
+      source = new EventSourceClass(apiUrl(`/api/eventos?ano=${encodeURIComponent(year)}&mes=${encodeURIComponent(month)}${suffix}`), API_BASE ? { withCredentials: true } : undefined);
+    } catch {
+      onConnection('indisponivel');
+      return;
+    }
+    const current = source;
+    for (const [name, handler] of Object.entries(handlers)) current.addEventListener(name, handler);
+    detach = () => {
+      for (const [name, handler] of Object.entries(handlers)) current.removeEventListener(name, handler);
+      current.close();
+    };
+  }
+
+  connect();
   return () => {
     active = false;
-    for (const [name, handler] of Object.entries(handlers)) source.removeEventListener(name, handler);
-    source.close();
+    clearTimeout(retry);
+    detach();
   };
 }
 

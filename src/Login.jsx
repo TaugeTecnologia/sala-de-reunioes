@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { apiFetch } from './lib/api.js';
+import { apiFetch, setToken } from './lib/api.js';
 
 const GSI_SRC = 'https://accounts.google.com/gsi/client';
 const DEFAULT_DOMAIN = 'tauge.com.br';
@@ -61,6 +61,7 @@ export default function Login({ config, onAuthenticated, offline = false, onRetr
       const response = await apiFetch('/api/auth/google', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ credential }) });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.erro || 'Não foi possível entrar. Tente novamente.');
+      setToken(data.token);
       onAuthenticated(data.usuario);
     } catch (problem) { setError(problem.message); setBusy(false); }
   }

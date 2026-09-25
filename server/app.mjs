@@ -258,7 +258,18 @@ async function handleAuth(auth, request, response, url) {
   } else if (request.method === 'POST' && route === 'google') {
     const body = await jsonBody(request, 8192);
     const { usuario, session } = await auth.loginWithGoogle(body.credential);
-    sendJson(response, 200, { usuario }, { 'Set-Cookie': auth.cookieHeader(session.token, session.maxAge) });
+    console.info(`[auth] login ok: ${usuario.email}`);
+    sendJson(response, 200, { usuario, token: session.token }, { 'Set-Cookie': auth.cookieHeader(session.token, session.maxAge) });
+  } else if (route === 'ticket' && request.method === 'POST') {
+    const session = auth.getSession(request);
+    if (!session) throw new HttpError(401, 'Sessão expirada. Entre novamente.');
+    sendJson(response, 200, { ticket: auth.createTicket(session.email, session.nome) });
+  } else if (route === 'renovar' && request.method === 'POST') {
+    // Renovação deslizante: enquanto o painel está em uso, a sessão continua valendo.
+    const session = auth.getSession(request);
+    if (!session) throw new HttpError(401, 'Sessão expirada. Entre novamente.');
+    const renewed = auth.renewSession(session);
+    sendJson(response, 200, { usuario: session, token: renewed.token }, { 'Set-Cookie': auth.cookieHeader(renewed.token, renewed.maxAge) });
   } else if (route === 'sair' && request.method === 'POST') {
     sendJson(response, 200, { ok: true }, { 'Set-Cookie': auth.clearCookie() });
   } else {
@@ -296,7 +307,7 @@ export function createApp({ auth = null, allowedOrigins = [], allowedHosts = [],
           response.setHeader('Access-Control-Allow-Credentials', 'true');
           response.setHeader('Vary', 'Origin');
           if (request.method === 'OPTIONS') {
-            response.writeHead(204, { 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Max-Age': '600' });
+            response.writeHead(204, { 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type, Authorization', 'Access-Control-Max-Age': '600' });
             response.end();
             return;
           }
@@ -306,7 +317,10 @@ export function createApp({ auth = null, allowedOrigins = [], allowedHosts = [],
         await handleAuth(auth, request, response, url);
         return;
       }
-      if (auth && url.pathname.startsWith('/api/') && !auth.getSession(request)) throw new HttpError(401, 'Sessão expirada. Entre novamente.');
+      if (auth && url.pathname.startsWith('/api/') && !auth.getSession(request) && !(url.pathname === '/api/eventos' && auth.readTicket(url.searchParams.get('ticket')))) {
+        console.warn(`[auth] 401 ${url.pathname} (Authorization: ${request.headers.authorization ? 'sim' : 'não'}, cookie: ${request.headers.cookie ? 'sim' : 'não'})`);
+        throw new HttpError(401, 'Sessão expirada. Entre novamente.');
+      }
       if (url.pathname === '/api/agenda' && request.method === 'GET') {
         sendJson(response, 200, await load(parseYear(url.searchParams.get('ano') ?? undefined), parseMonth(url.searchParams.get('mes') ?? undefined)));
       } else if (url.pathname === '/api/eventos' && request.method === 'GET') {
