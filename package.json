@@ -8,7 +8,6 @@
     "build": "vite build",
     "start": "node --env-file-if-exists=.env server/index.mjs",
     "publicar": "bash scripts/publicar-pages.sh",
-    "usuario": "node --env-file-if-exists=.env scripts/usuario.mjs",
     "test": "node --test src/lib/*.test.js server/*.test.mjs"
   },
   "dependencies": { "react": "19.3.0", "react-dom": "19.3.0" },

@@ -9,4 +9,3 @@ coletor/token*.json
 coletor/client_secret*.json
 coletor/credentials.json
 coletor/conta-servico*.json
-usuarios.json

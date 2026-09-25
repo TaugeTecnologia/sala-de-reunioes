@@ -17,11 +17,9 @@ WORKDIR /app
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORTA=8787 \
-    PYTHON_EXECUTABLE=/venv/bin/python \
-    USUARIOS_ARQUIVO=/dados/usuarios.json
+    PYTHON_EXECUTABLE=/venv/bin/python
 COPY package.json ./
 COPY server server
-COPY scripts/usuario.mjs scripts/usuario.mjs
 COPY src/lib/periods.js src/lib/agenda.js src/lib/week.js src/lib/
 COPY coletor coletor
 COPY --from=build /app/dist dist

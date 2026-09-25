@@ -23,19 +23,10 @@
 .login-card input::placeholder { color: #8ea1b2; }
 .login-card input:focus { outline: 0; border-color: #008eb3; box-shadow: 0 0 0 3px #00ccff40; }
 .login-card input:disabled { background: #eef3f7; }
-.login-card input[type=email] { margin-bottom: 18px; }
-.password-field { position: relative; margin-bottom: 22px; }
-.password-field input { padding-right: 84px; }
-.password-toggle { position: absolute; right: 6px; top: 6px; height: 36px; padding: 0 12px; border: 0; border-radius: 6px; background: transparent; color: #006e8f; font-size: 13px; font-weight: 500; }
-.password-toggle:hover { background: #e6f6fb; }
-.login-loading .password-toggle { position: static; height: auto; margin-left: 8px; }
-.login-submit { height: 48px; border: 0; border-radius: 8px; background: var(--navy); color: white; font-size: 15px; font-weight: 500; transition: background .15s; }
-.login-submit:hover:not(:disabled) { background: #00305f; }
-.login-submit:focus-visible { outline: 3px solid var(--cyan); outline-offset: 2px; }
-.login-submit:disabled { background: #7f9bb8; }
-.login-divider { display: flex; align-items: center; gap: 14px; margin: 22px 0; color: #7a8d9e; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }
-.login-divider::before, .login-divider::after { content: ''; flex: 1; height: 1px; background: #dbe4ec; }
-.google-slot { min-height: 44px; display: flex; justify-content: center; }
+.login-hint { min-height: 22px; margin: 6px 0 14px; font-size: 12px; color: var(--muted); }
+.login-hint.invalid { color: #a4262c; }
+.login-card input[aria-invalid=true] { border-color: #d98b8f; }
+.login-loading .google-slot { min-height: 44px; display: flex; justify-content: center; }
 .google-fallback { height: 46px; display: flex; align-items: center; justify-content: center; gap: 10px; border: 1px solid #c9d6e0; border-radius: 8px; background: white; color: #3c4a57; font-size: 14px; font-weight: 500; }
 .google-fallback:disabled { opacity: .55; }
 .login-note { margin-top: 22px; color: var(--muted); font-size: 12px; text-align: center; }

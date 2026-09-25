@@ -18,20 +18,22 @@ e as dependências Python do coletor (`pip install -r coletor/requirements.txt`)
 
 ## Acesso e autenticação
 
-Todas as rotas `/api/*` exigem sessão. A tela de entrada aceita o **e-mail institucional**
-(domínio definido em `EMAIL_DOMINIO`, padrão `tauge.com`) com senha, ou **Entrar com o Google**.
+O acesso é **somente pelo Google**, restrito ao domínio institucional (`EMAIL_DOMINIO`, padrão
+`tauge.com.br`). Não há banco de senhas.
 
-1. Copie `.env.example` para `.env` e preencha `GOOGLE_CLIENT_ID` e `SESSAO_SEGREDO`.
-   O ID do cliente OAuth 2.0 (tipo *Aplicativo da Web*) é criado no Google Cloud Console; em
-   *Origens JavaScript autorizadas*, informe a URL de acesso ao painel. Sem `GOOGLE_CLIENT_ID`, o
-   botão do Google fica desabilitado.
-2. Cadastre usuários com senha: `npm run usuario -- nome@tauge.com "Nome Completo"`. As senhas são
-   gravadas com scrypt em `usuarios.json`, arquivo que não é versionado.
-3. O login com Google só é aceito para contas Google Workspace do domínio configurado (o token é
-   validado no servidor: cliente, emissor, e-mail verificado e domínio).
+1. A tela pede o e-mail e confere se ele é do domínio `@tauge.com.br`.
+2. Se for, libera o botão **Continuar com o Google**, já sugerindo essa conta.
+3. O servidor valida o token do Google (cliente, emissor, e-mail verificado e domínio do Workspace)
+   e abre a sessão. Todas as rotas `/api/*` exigem essa sessão.
 
-A sessão dura 8 horas e usa cookie `HttpOnly` com `SameSite=Strict`. Após 5 tentativas erradas, o
-e-mail e o endereço de origem ficam bloqueados por 1 minuto.
+Configuração:
+
+1. No Google Cloud Console, crie um ID de cliente OAuth 2.0 do tipo *Aplicativo da Web*. Em
+   *Origens JavaScript autorizadas*, inclua `https://taugetecnologia.github.io` (e o endereço do
+   túnel, se for abrir o painel direto por ele).
+2. Copie `.env.example` para `.env` e preencha `GOOGLE_CLIENT_ID` e `SESSAO_SEGREDO`.
+
+Sem `GOOGLE_CLIENT_ID`, ninguém consegue entrar. A sessão dura 8 horas (cookie `HttpOnly`).
 
 ## Publicação: front no GitHub Pages, backend neste servidor
 
@@ -58,10 +60,9 @@ use `docker compose --profile fixo up -d`; depois publique com `VITE_API_URL=htt
 ```bash
 docker compose ps                                       # estado
 docker compose logs -f painel                           # logs do backend
-docker compose exec -it painel node scripts/usuario.mjs nome@tauge.com "Nome Completo"   # cadastrar usuário
 ```
 
-Dados que ficam no servidor (fora do Git): `dados/usuarios.json`, `.env` e, em `coletor/`, o token do
+Dados que ficam no servidor (fora do Git): `.env` e, em `coletor/`, o token do
 Google e a pasta `exportacoes/`.
 
 - **Google:** em *Origens JavaScript autorizadas* do cliente OAuth, inclua

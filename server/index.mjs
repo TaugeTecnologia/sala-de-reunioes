@@ -1,4 +1,3 @@
-import path from 'node:path';
 import { createApp } from './app.mjs';
 import { createAuth } from './auth.mjs';
 
@@ -11,12 +10,11 @@ const listenHost = process.env.HOST || '127.0.0.1';
 const port = Number(process.env.PORTA) || 8787;
 const auth = createAuth({
   crossSite: allowedOrigins.length > 0,
-  domain: process.env.EMAIL_DOMINIO || 'tauge.com',
+  domain: process.env.EMAIL_DOMINIO || 'tauge.com.br',
   googleClientId: process.env.GOOGLE_CLIENT_ID || '',
-  usersFile: path.resolve(process.env.USUARIOS_ARQUIVO || 'usuarios.json'),
   secret: secret || undefined,
 });
-if (!auth.googleClientId) console.warn('GOOGLE_CLIENT_ID não definido: o acesso com Google ficará indisponível.');
+if (!auth.googleClientId) console.warn('GOOGLE_CLIENT_ID não definido: ninguém conseguirá entrar (o login é somente pelo Google).');
 const { server, stop: stopApp } = createApp({ auth, allowedOrigins, allowedHosts });
 server.listen(port, listenHost, () => {
   console.log(`Painel de salas: http://${listenHost}:${port}`);

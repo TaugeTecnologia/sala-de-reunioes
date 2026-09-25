@@ -8,7 +8,6 @@ services:
     environment:
       HOST: 0.0.0.0
     volumes:
-      - ./dados:/dados            # usuarios.json
       - ./coletor:/app/coletor    # token do Google e exportações do coletor
     ports:
       - "127.0.0.1:8787:8787"     # acesso local; a internet chega só pelo túnel

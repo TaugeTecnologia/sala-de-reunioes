@@ -4,7 +4,7 @@ Logotipos extraídos do arquivo fornecido pelo usuário, `Manual da marca - Taug
 
 - `tauge-logo.svg`: assinatura preferencial, página 1.
 - `tauge-logo-light.svg`: aplicação em fundo azul, página 2.
-- `tauge-symbol.svg`: símbolo da assinatura, página 1, usado também como favicon.
+- `tauge-symbol.png`: símbolo da assinatura com fundo transparente, usado no topo e como base do favicon.
 
 Os arquivos preservam o desenho original e suas proporções. A tipografia da
 assinatura permanece nos contornos do logotipo; não foi substituída por texto.

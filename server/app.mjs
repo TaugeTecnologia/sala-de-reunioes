@@ -255,11 +255,9 @@ async function handleAuth(auth, request, response, url) {
     sendJson(response, 200, { autenticado: !auth || Boolean(session), usuario: session || null, ...(auth?.publicConfig() ?? { dominio: null, googleClientId: null }) });
   } else if (!auth) {
     throw new HttpError(404, 'Rota da API não encontrada.');
-  } else if (request.method === 'POST' && ['entrar', 'google'].includes(route)) {
+  } else if (request.method === 'POST' && route === 'google') {
     const body = await jsonBody(request, 8192);
-    const { usuario, session } = route === 'entrar'
-      ? await auth.login(body.email, body.senha, request.socket.remoteAddress)
-      : await auth.loginWithGoogle(body.credential);
+    const { usuario, session } = await auth.loginWithGoogle(body.credential);
     sendJson(response, 200, { usuario }, { 'Set-Cookie': auth.cookieHeader(session.token, session.maxAge) });
   } else if (route === 'sair' && request.method === 'POST') {
     sendJson(response, 200, { ok: true }, { 'Set-Cookie': auth.clearCookie() });
