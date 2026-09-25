@@ -14,6 +14,13 @@ trap 'rm -rf "$tmp"' EXIT
 git clone -q --depth 1 --branch gh-pages "https://github.com/$REPO.git" "$tmp"
 find "$tmp" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
 cp -r dist/. "$tmp/"
+# Qualquer endereço desconhecido (favoritos antigos, /login, /agenda...) volta para a página inicial.
+cat > "$tmp/404.html" <<HTML
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><title>Sala de Reuniões</title>
+<meta http-equiv="refresh" content="0;url=$BASE"><script>location.replace("$BASE" + location.hash)</script></head>
+<body><a href="$BASE">Ir para a Sala de Reuniões</a></body></html>
+HTML
 touch "$tmp/.nojekyll"
 cd "$tmp"
 git add -A
