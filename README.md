@@ -35,18 +35,40 @@ e-mail e o endereço de origem ficam bloqueados por 1 minuto.
 
 ## Publicação: front no GitHub Pages, backend neste servidor
 
-- **Backend** (`server/`): roda neste servidor (`npm start`) e guarda credenciais, usuários e dados.
-  Ele precisa ficar acessível por **HTTPS** (proxy reverso ou túnel) em um endereço como
-  `https://api.tauge.com`. No `.env`, defina `ORIGENS_PERMITIDAS=https://taugetecnologia.github.io`
-  e `HOSTS_PERMITIDOS=api.tauge.com`.
-- **Front** (`src/`): publicado em https://taugetecnologia.github.io/sala-de-reunioes/ com
-  `VITE_API_URL=https://api.tauge.com npm run publicar`. Sem `VITE_API_URL`, o site abre a tela de
-  login com aviso de servidor indisponível.
+- **Backend** (`server/`, `coletor/`): roda neste servidor em Docker (`Dockerfile`, `docker-compose.yml`),
+  com um túnel HTTPS da Cloudflare na frente. Nenhuma porta é aberta na internet.
+- **Front** (`src/`): publicado em https://taugetecnologia.github.io/sala-de-reunioes/ e apontando
+  para a URL da API (`VITE_API_URL`).
+
+### Subir tudo
+
+```bash
+bash scripts/subir.sh                 # backend + túnel; imprime a URL da API
+PUBLICAR=1 bash scripts/subir.sh      # idem, e republica o front já apontando para essa URL
+```
+
+O script cria o `.env` (gera o `SESSAO_SEGREDO`), sobe os contêineres e espera o túnel. O túnel
+temporário (`*.trycloudflare.com`) **muda de endereço sempre que o contêiner do túnel é recriado ou
+o servidor reinicia**; nesse caso, rode `PUBLICAR=1 bash scripts/subir.sh` de novo. Para um endereço
+fixo, crie um túnel nomeado na Cloudflare com um domínio próprio, coloque `TUNNEL_TOKEN` no `.env` e
+use `docker compose --profile fixo up -d`; depois publique com `VITE_API_URL=https://api.seu-dominio npm run publicar`.
+
+### Operação
+
+```bash
+docker compose ps                                       # estado
+docker compose logs -f painel                           # logs do backend
+docker compose exec -it painel node scripts/usuario.mjs nome@tauge.com "Nome Completo"   # cadastrar usuário
+```
+
+Dados que ficam no servidor (fora do Git): `dados/usuarios.json`, `.env` e, em `coletor/`, o token do
+Google e a pasta `exportacoes/`.
+
 - **Google:** em *Origens JavaScript autorizadas* do cliente OAuth, inclua
   `https://taugetecnologia.github.io`.
 - **Cookies:** navegadores como o Safari bloqueiam cookies de terceiros. Para o login se manter em
   todos eles, use um domínio próprio para os dois lados (por exemplo `salas.tauge.com` no Pages e
-  `api.tauge.com` no backend), que ficam no mesmo site.
+  `api.tauge.com` no backend). O endereço do túnel também abre o painel completo, sem esse problema.
 
 ## O que aparece
 

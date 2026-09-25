@@ -139,3 +139,16 @@ test('front em outro domínio: CORS com cookies só para origens autorizadas', a
   assert.equal((await send('/api/auth/sessao', { origin: 'https://evil.example' })).status, 403);
   assert.equal((await send('/api/auth/sessao', { origin: front, host: 'outro.exemplo.com' })).status, 403);
 });
+
+test('hosts iniciados por ponto valem para subdomínios', async (t) => {
+  const { server } = createApp({ allowedHosts: ['.trycloudflare.com'], load: async () => ({ eventos: [] }) });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(async () => { server.closeAllConnections(); await new Promise((resolve) => server.close(resolve)); });
+  const status = (host) => new Promise((resolve, reject) => {
+    const req = httpRequest({ port: server.address().port, host: '127.0.0.1', path: '/api/auth/sessao', headers: { Host: host } }, (res) => { res.resume(); resolve(res.statusCode); });
+    req.on('error', reject); req.end();
+  });
+  assert.equal(await status('abc-def.trycloudflare.com'), 200);
+  assert.equal(await status('trycloudflare.com.evil.example'), 403);
+  assert.equal(await status('evil.example'), 403);
+});

@@ -1,0 +1,33 @@
+# Backend + túnel HTTPS. Uso: bash scripts/subir.sh   (ou docker compose --profile rapido up -d --build)
+services:
+  painel:
+    build: .
+    restart: unless-stopped
+    user: "65534:1011"
+    env_file: .env
+    environment:
+      HOST: 0.0.0.0
+    volumes:
+      - ./dados:/dados            # usuarios.json
+      - ./coletor:/app/coletor    # token do Google e exportações do coletor
+    ports:
+      - "127.0.0.1:8787:8787"     # acesso local; a internet chega só pelo túnel
+
+  # Túnel temporário (sem conta, sem abrir portas). A URL https://*.trycloudflare.com muda
+  # quando este contêiner é recriado.
+  tunel:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --url http://painel:8787
+    depends_on: [painel]
+    profiles: ["rapido"]
+
+  # Túnel com endereço fixo (domínio próprio na Cloudflare). Defina TUNNEL_TOKEN no .env.
+  tunel-fixo:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
+    depends_on: [painel]
+    profiles: ["fixo"]

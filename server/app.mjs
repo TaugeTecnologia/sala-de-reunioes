@@ -274,6 +274,8 @@ export function createApp({ auth = null, allowedOrigins = [], allowedHosts = [],
   const streams = new Set();
   const trustedOrigins = new Set(allowedOrigins.map((origin) => origin.replace(/\/$/, '')));
   const trustedHosts = new Set(allowedHosts.map((host) => host.toLowerCase()));
+  // Entradas iniciadas por ponto (ex.: .trycloudflare.com) valem para qualquer subdomínio.
+  const isTrustedHost = (name) => trustedHosts.has(name) || [...trustedHosts].some((entry) => entry.startsWith('.') && name.endsWith(entry));
   const stop = () => {
     realtime.stop();
     for (const response of streams) response.end();
@@ -283,7 +285,7 @@ export function createApp({ auth = null, allowedOrigins = [], allowedHosts = [],
   const server = createServer({ requestTimeout: 10_000, headersTimeout: 10_000 }, async (request, response) => {
     try {
       const host = (request.headers.host || '').toLowerCase();
-      if (!/^(?:127\.0\.0\.1|localhost)(?::\d+)?$/.test(host) && !trustedHosts.has(host.replace(/:\d+$/, ''))) throw new HttpError(403, 'Endereço de acesso não autorizado.');
+      if (!/^(?:127\.0\.0\.1|localhost)(?::\d+)?$/.test(host) && !isTrustedHost(host.replace(/:\d+$/, ''))) throw new HttpError(403, 'Endereço de acesso não autorizado.');
       const rawPath = (request.url || '/').split('?')[0];
       const url = new URL(request.url, 'http://127.0.0.1');
       if (url.pathname.startsWith('/api/')) {

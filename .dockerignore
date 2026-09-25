@@ -1,0 +1,12 @@
+node_modules
+dist
+.git
+.env
+dados
+coletor/exportacoes
+coletor/__pycache__
+coletor/token*.json
+coletor/client_secret*.json
+coletor/credentials.json
+coletor/conta-servico*.json
+usuarios.json
