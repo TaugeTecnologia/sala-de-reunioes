@@ -18,6 +18,10 @@ touch "$tmp/.nojekyll"
 cd "$tmp"
 git add -A
 if git diff --cached --quiet; then echo "Nada a publicar."; exit 0; fi
-git -c user.name="${GIT_AUTHOR_NAME:-Tauge}" -c user.email="${GIT_AUTHOR_EMAIL:-noreply@users.noreply.github.com}" commit -q -m "Publica front $(date +%F_%H:%M)"
+# Autor do commit: o de quem publica (git config ou conta do gh). Nunca um e-mail genérico,
+# que o GitHub atribuiria a uma conta de terceiros.
+author_name="${GIT_AUTHOR_NAME:-$(git config user.name || gh api user --jq '.name // .login')}"
+author_email="${GIT_AUTHOR_EMAIL:-$(git config user.email || gh api user --jq '"\(.id)+\(.login)@users.noreply.github.com"')}"
+git -c user.name="$author_name" -c user.email="$author_email" commit -q -m "Publica front $(date +%F_%H:%M)"
 git push -q origin gh-pages
 echo "Publicado: https://${REPO%%/*}.github.io/${REPO#*/}/" | tr 'A-Z' 'a-z'
