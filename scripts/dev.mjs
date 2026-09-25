@@ -25,7 +25,7 @@ function run(args, ipc = false) {
   child.on('exit', (code) => { if (!stopping) stop(code || 0); });
 }
 
-run(['server/index.mjs'], true);
+run(['--env-file-if-exists=.env', 'server/index.mjs'], true);
 run(['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', '5175', '--strictPort']);
 process.on('SIGINT', () => stop());
 process.on('SIGTERM', () => stop());

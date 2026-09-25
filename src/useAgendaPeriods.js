@@ -35,6 +35,7 @@ export function useAgendaPeriods(requested) {
       });
       fetch(`/api/agenda?ano=${period.ano}&mes=${period.mes}`, { cache: 'no-store', signal: abort.signal })
         .then(async response => {
+          if (response.status === 401) { window.dispatchEvent(new Event('sessao-expirada')); return; }
           if (response.status === 404) return; // O SSE inicia a primeira coleta desse mês.
           const body = await response.json();
           if (!response.ok) throw new Error(body.erro || 'Não foi possível carregar a agenda.');

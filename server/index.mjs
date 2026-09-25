@@ -1,6 +1,17 @@
+import path from 'node:path';
 import { createApp } from './app.mjs';
+import { createAuth } from './auth.mjs';
 
-const { server, stop: stopApp } = createApp();
+const secret = process.env.SESSAO_SEGREDO;
+if (!secret) console.warn('SESSAO_SEGREDO não definido: as sessões serão encerradas a cada reinicialização.');
+const auth = createAuth({
+  domain: process.env.EMAIL_DOMINIO || 'tauge.com',
+  googleClientId: process.env.GOOGLE_CLIENT_ID || '',
+  usersFile: path.resolve(process.env.USUARIOS_ARQUIVO || 'usuarios.json'),
+  secret: secret || undefined,
+});
+if (!auth.googleClientId) console.warn('GOOGLE_CLIENT_ID não definido: o acesso com Google ficará indisponível.');
+const { server, stop: stopApp } = createApp({ auth });
 server.listen(8787, '127.0.0.1', () => {
   console.log('Painel de salas: http://127.0.0.1:8787');
 });

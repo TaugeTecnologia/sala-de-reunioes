@@ -12,9 +12,8 @@ export const EXPORT_DIR = path.join(COLLECTOR_DIR, 'exportacoes');
 const LOCAL_ORIGINS = new Set(['http://127.0.0.1:8787', 'http://localhost:8787', 'http://127.0.0.1:5175', 'http://localhost:5175']);
 const EVENT_FIELDS = ['chave', 'ical_uid', 'id_evento', 'nome', 'data', 'inicio', 'fim', 'inicio_legivel', 'fim_legivel', 'dia_inteiro', 'fim_exclusivo', 'duracao_minutos', 'criador', 'organizador', 'local', 'salas', 'participantes', 'descricao', 'tem_conferencia_online', 'modalidade', 'classificacao', 'motivo', 'bloqueio_confirmado', 'agenda_copia_utilizada', 'copias_encontradas', 'agendas_origem', 'avisos'];
 
-export class HttpError extends Error {
-  constructor(status, message) { super(message); this.status = status; }
-}
+import { HttpError } from './http-error.mjs';
+export { HttpError };
 
 export function parseYear(value = periodAt().ano) {
   if (!['number', 'string'].includes(typeof value) || !/^\d{1,4}$/.test(String(value)) || !Number.isInteger(Number(value)) || Number(value) < 1 || Number(value) > 9998) {
@@ -197,26 +196,26 @@ export function createSyncController({ spawnProcess = spawn, load = (year, month
   };
 }
 
-function sendJson(response, status, body) {
-  response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+function sendJson(response, status, body, headers = {}) {
+  response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...headers });
   response.end(JSON.stringify(body));
 }
 
-async function jsonBody(request) {
+async function jsonBody(request, limit = 1024) {
   if (!/^application\/json(?:\s*;|$)/i.test(request.headers['content-type'] || '')) throw new HttpError(415, 'Envie os dados em JSON.');
-  if (Number(request.headers['content-length']) > 1024) throw new HttpError(413, 'O pedido excede o tamanho permitido.');
+  if (Number(request.headers['content-length']) > limit) throw new HttpError(413, 'O pedido excede o tamanho permitido.');
   let body = '';
   let bytes = 0;
   for await (const chunk of request) {
     bytes += chunk.length;
-    if (bytes > 1024) throw new HttpError(413, 'O pedido excede o tamanho permitido.');
+    if (bytes > limit) throw new HttpError(413, 'O pedido excede o tamanho permitido.');
     body += chunk.toString('utf8');
   }
   try {
     const parsed = JSON.parse(body);
     if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') throw new Error();
     return parsed;
-  } catch { throw new HttpError(400, 'Envie um objeto JSON com o ano e mês da coleta.'); }
+  } catch { throw new HttpError(400, 'Envie um objeto JSON válido.'); }
 }
 
 const MIME_TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.json': 'application/json; charset=utf-8' };
@@ -249,7 +248,27 @@ async function serveFrontend(request, response, pathname, distDir) {
   }
 }
 
-export function createApp({ exportDir = EXPORT_DIR, distDir = path.join(PROJECT_DIR, 'dist'), syncController, load = (year, month) => loadAgenda(year, exportDir, month), realtimeOptions = {} } = {}) {
+async function handleAuth(auth, request, response, url) {
+  const route = url.pathname.slice('/api/auth/'.length);
+  if (route === 'sessao' && request.method === 'GET') {
+    const session = auth?.getSession(request);
+    sendJson(response, 200, { autenticado: !auth || Boolean(session), usuario: session || null, ...(auth?.publicConfig() ?? { dominio: null, googleClientId: null }) });
+  } else if (!auth) {
+    throw new HttpError(404, 'Rota da API não encontrada.');
+  } else if (request.method === 'POST' && ['entrar', 'google'].includes(route)) {
+    const body = await jsonBody(request, 8192);
+    const { usuario, session } = route === 'entrar'
+      ? await auth.login(body.email, body.senha, request.socket.remoteAddress)
+      : await auth.loginWithGoogle(body.credential);
+    sendJson(response, 200, { usuario }, { 'Set-Cookie': auth.cookieHeader(session.token, session.maxAge) });
+  } else if (route === 'sair' && request.method === 'POST') {
+    sendJson(response, 200, { ok: true }, { 'Set-Cookie': auth.clearCookie() });
+  } else {
+    throw new HttpError(404, 'Rota da API não encontrada.');
+  }
+}
+
+export function createApp({ auth = null, exportDir = EXPORT_DIR, distDir = path.join(PROJECT_DIR, 'dist'), syncController, load = (year, month) => loadAgenda(year, exportDir, month), realtimeOptions = {} } = {}) {
   const sync = syncController || createSyncController({ load });
   const realtime = createRealtimeMonitor({ sync, load, ...realtimeOptions });
   const streams = new Set();
@@ -265,6 +284,11 @@ export function createApp({ exportDir = EXPORT_DIR, distDir = path.join(PROJECT_
       const rawPath = (request.url || '/').split('?')[0];
       const url = new URL(request.url, 'http://127.0.0.1');
       if (url.pathname.startsWith('/api/') && (request.headers['sec-fetch-site'] === 'cross-site' || (request.headers.origin && !LOCAL_ORIGINS.has(request.headers.origin) && request.headers.origin !== `http://${request.headers.host}`))) throw new HttpError(403, 'Origem não autorizada para acessar os dados locais.');
+      if (url.pathname.startsWith('/api/auth/')) {
+        await handleAuth(auth, request, response, url);
+        return;
+      }
+      if (auth && url.pathname.startsWith('/api/') && !auth.getSession(request)) throw new HttpError(401, 'Sessão expirada. Entre novamente.');
       if (url.pathname === '/api/agenda' && request.method === 'GET') {
         sendJson(response, 200, await load(parseYear(url.searchParams.get('ano') ?? undefined), parseMonth(url.searchParams.get('mes') ?? undefined)));
       } else if (url.pathname === '/api/eventos' && request.method === 'GET') {

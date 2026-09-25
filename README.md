@@ -16,6 +16,23 @@ Acesse **http://127.0.0.1:5175**. O comando inicia a interface e o serviço de d
 em conjunto. Para encerrar, pressione `Ctrl+C` no terminal. Requer Node.js 22.12+
 e as dependências Python do coletor (`pip install -r coletor/requirements.txt`).
 
+## Acesso e autenticação
+
+Todas as rotas `/api/*` exigem sessão. A tela de entrada aceita o **e-mail institucional**
+(domínio definido em `EMAIL_DOMINIO`, padrão `tauge.com`) com senha, ou **Entrar com o Google**.
+
+1. Copie `.env.example` para `.env` e preencha `GOOGLE_CLIENT_ID` e `SESSAO_SEGREDO`.
+   O ID do cliente OAuth 2.0 (tipo *Aplicativo da Web*) é criado no Google Cloud Console; em
+   *Origens JavaScript autorizadas*, informe a URL de acesso ao painel. Sem `GOOGLE_CLIENT_ID`, o
+   botão do Google fica desabilitado.
+2. Cadastre usuários com senha: `npm run usuario -- nome@tauge.com "Nome Completo"`. As senhas são
+   gravadas com scrypt em `usuarios.json`, arquivo que não é versionado.
+3. O login com Google só é aceito para contas Google Workspace do domínio configurado (o token é
+   validado no servidor: cliente, emissor, e-mail verificado e domínio).
+
+A sessão dura 8 horas e usa cookie `HttpOnly` com `SameSite=Strict`. Após 5 tentativas erradas, o
+e-mail e o endereço de origem ficam bloqueados por 1 minuto.
+
 ## O que aparece
 
 - **Visão geral:** situação atual da sala, próxima reunião, dia da semana e data

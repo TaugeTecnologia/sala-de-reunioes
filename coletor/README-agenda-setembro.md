@@ -57,7 +57,7 @@ Renovações de tokens expirados não acrescentam permissões.
 Para service account com delegação de domínio:
 
 ```powershell
-python .\trazer-agenda-de-setembro.py --ano 2027 --mes 1 --conta-servico .\conta-servico.json --admin gestor@suaempresa.com
+python .\trazer-agenda-de-setembro.py --ano 2027 --mes 1 --conta-servico .\conta-servico.json --admin <e-mail-do-administrador>
 ```
 
 O cliente da service account precisa ter o escopo Calendar autorizado na delegação
