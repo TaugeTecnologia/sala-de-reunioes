@@ -3,6 +3,11 @@ import { apiFetch, fetchTicket, getToken } from './lib/api.js';
 import { connectAgenda, shouldAcceptAgenda } from './lib/live.js';
 import { mergeAgendas, monthPeriod } from './lib/periods.js';
 
+const POLL_MS = 5000;
+const FALLBACK_MS = 6000;
+// Túneis rápidos não entregam Server-Sent Events; nesse caso o painel só consulta periodicamente.
+const POLL_ONLY = import.meta.env?.VITE_TEMPO_REAL === 'polling';
+
 export function useAgendaPeriods(requested) {
   const [snapshots, setSnapshots] = useState({});
   const [states, setStates] = useState({});
@@ -29,11 +34,41 @@ export function useAgendaPeriods(requested) {
         });
         setErrors(previous => ({ ...previous, [period.key]: '' }));
       };
-      const close = connectAgenda({ year: period.ano, month: period.mes, getTicket: getToken() ? fetchTicket : null,
+      // Consulta periódica: usada quando o fluxo em tempo real não conecta (ou não é suportado).
+      let poll = null;
+      let fallback = null;
+      let streaming = false;
+      const tick = async () => {
+        try {
+          const query = `ano=${period.ano}&mes=${period.mes}`;
+          const [agendaResponse, stateResponse] = await Promise.all([
+            apiFetch(`/api/agenda?${query}`, { cache: 'no-store', signal: abort.signal }),
+            apiFetch(`/api/sincronizacao?${query}&presenca=1`, { cache: 'no-store', signal: abort.signal }),
+          ]);
+          if (agendaResponse.status === 401 || stateResponse.status === 401) { window.dispatchEvent(new Event('sessao-expirada')); return; }
+          if (!active) return;
+          if (agendaResponse.ok) accept(await agendaResponse.json());
+          if (stateResponse.ok) { const state = await stateResponse.json(); if (active) setStates(previous => ({ ...previous, [period.key]: state })); }
+          if (active) setConnections(previous => ({ ...previous, [period.key]: 'conectado' }));
+        } catch { /* tenta de novo no próximo ciclo */ }
+      };
+      const startPolling = () => { if (poll || !active) return; tick(); poll = setInterval(tick, POLL_MS); };
+      const onConnection = connection => {
+        if (!active) return;
+        if (connection === 'conectado') {
+          streaming = true; clearInterval(poll); poll = null; clearTimeout(fallback); fallback = null;
+        } else {
+          streaming = false;
+          if (!fallback && !poll) fallback = setTimeout(() => { fallback = null; if (!streaming) startPolling(); }, FALLBACK_MS);
+        }
+        if (!(poll && connection !== 'conectado')) setConnections(previous => ({ ...previous, [period.key]: connection }));
+      };
+      const closeStream = POLL_ONLY ? (startPolling(), () => {}) : connectAgenda({ year: period.ano, month: period.mes, getTicket: getToken() ? fetchTicket : null,
         onAgenda: accept,
         onState: state => { if (active) setStates(previous => ({ ...previous, [period.key]: state })); },
-        onConnection: connection => { if (active) setConnections(previous => ({ ...previous, [period.key]: connection })); },
+        onConnection,
       });
+      const close = () => { closeStream(); clearInterval(poll); clearTimeout(fallback); };
       apiFetch(`/api/agenda?ano=${period.ano}&mes=${period.mes}`, { cache: 'no-store', signal: abort.signal })
         .then(async response => {
           if (response.status === 401) { window.dispatchEvent(new Event('sessao-expirada')); return; }

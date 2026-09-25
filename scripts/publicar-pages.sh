@@ -8,6 +8,8 @@ REPO="${PAGES_REPO:-TaugeTecnologia/sala-de-reunioes}"
 BASE="/${REPO#*/}/"
 [ -n "${VITE_API_URL:-}" ] || echo "Aviso: VITE_API_URL não definido; o site abrirá sem conexão com o backend." >&2
 
+# Túneis rápidos da Cloudflare não entregam Server-Sent Events: o painel usa consulta periódica.
+case "${VITE_API_URL:-}" in *.trycloudflare.com*) export VITE_TEMPO_REAL=polling ;; esac
 npx vite build --base="$BASE"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT

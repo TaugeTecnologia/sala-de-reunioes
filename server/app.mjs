@@ -285,7 +285,20 @@ export function createApp({ auth = null, allowedOrigins = [], allowedHosts = [],
   const trustedHosts = new Set(allowedHosts.map((host) => host.toLowerCase()));
   // Entradas iniciadas por ponto (ex.: .trycloudflare.com) valem para qualquer subdomínio.
   const isTrustedHost = (name) => trustedHosts.has(name) || [...trustedHosts].some((entry) => entry.startsWith('.') && name.endsWith(entry));
+  // Presença por consulta periódica (quando o fluxo em tempo real não passa, como no túnel rápido):
+  // cada chamada mantém o acompanhamento do mês ativo por mais 20 s.
+  const presence = new Map();
+  const keepAlive = (year, month) => {
+    const key = `${year}-${month}`;
+    let entry = presence.get(key);
+    if (!entry) { entry = { disconnect: realtime.subscribe(year, () => {}, month), timer: null }; presence.set(key, entry); }
+    clearTimeout(entry.timer);
+    entry.timer = setTimeout(() => { entry.disconnect(); presence.delete(key); }, 20_000);
+    entry.timer.unref?.();
+  };
   const stop = () => {
+    for (const entry of presence.values()) { clearTimeout(entry.timer); entry.disconnect(); }
+    presence.clear();
     realtime.stop();
     for (const response of streams) response.end();
     streams.clear();
@@ -344,7 +357,10 @@ export function createApp({ auth = null, allowedOrigins = [], allowedHosts = [],
         heartbeat.unref?.();
         response.once('close', () => { clearInterval(heartbeat); disconnect(); streams.delete(response); });
       } else if (url.pathname === '/api/sincronizacao' && request.method === 'GET') {
-        sendJson(response, 200, realtime.getState(parseYear(url.searchParams.get('ano') ?? undefined), parseMonth(url.searchParams.get('mes') ?? undefined)));
+        const year = parseYear(url.searchParams.get('ano') ?? undefined);
+        const month = parseMonth(url.searchParams.get('mes') ?? undefined);
+        if (url.searchParams.get('presenca') === '1') keepAlive(year, month);
+        sendJson(response, 200, realtime.getState(year, month));
       } else if (url.pathname === '/api/sincronizar' && request.method === 'POST') {
         const body = await jsonBody(request);
         if (!Object.hasOwn(body, 'ano')) throw new HttpError(400, 'Informe o ano da coleta.');
