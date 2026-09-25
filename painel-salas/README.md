@@ -36,37 +36,64 @@ As dependências já foram preparadas nesta máquina; basta `npm.cmd run dev`.
   Eventos simultâneos ficam lado a lado, reuniões que atravessam a
   meia-noite aparecem nos dias correspondentes e eventos de dia inteiro têm uma
   faixa própria. Clicar no evento abre seus detalhes; clicar na data filtra o dia.
-  O campo Data leva o calendário à semana escolhida. Os botões de semana removem
-  o filtro de dia, mantendo a busca, a sala e a situação da reserva.
-  Dias fora do período coletado ficam marcados como sem dados.
-- **Agenda:** calendário semanal com busca por evento ou pessoa e filtros de data,
-  sala e confirmação, substituindo a antiga tabela de eventos.
+  O campo Data aceita digitação contínua em **DD/MM/AAAA** (digite `25092026`)
+  e mostra somente o dia escolhido, inclusive quando a consulta específica é de
+  domingo. Datas incompletas ou inválidas não substituem o último filtro válido.
+  Sem filtros, os botões percorrem semanas consecutivas. Com filtros ativos,
+  passam a percorrer somente semanas com resultados, preservando os filtros.
+  Dias fora do período coletado ficam em branco, sem aviso ou fundo listrado.
+  Navegar para outros meses não amplia o período da coleta, que continua limitado a setembro.
+- **Agenda:** busca por nome da reunião, criador, organizador ou convidado
+  (incluindo e-mail), sem distinguir acentos ou maiúsculas. Os termos podem ser
+  combinados com data e sala. A busca leva à semana de um resultado e destaca seu
+  horário; a contagem informa quantas reuniões foram encontradas no período e na
+  área exibida. A rolagem manual é preservada durante a atualização dos dados.
+  A navegação usa um único par de botões no cabeçalho do calendário: **Semana
+  anterior / Próxima semana** sem filtros e **Anterior / Próxima** durante a busca.
+  Nesse modo, o título indica a posição (por exemplo, **Semana 2 de 3**), e os
+  botões ficam desabilitados nos limites ou quando não há resultados. Os eventos encontrados recebem um
+  contorno discreto e título levemente destacado, também nos eventos de dia inteiro.
+  O destaque desaparece ao limpar os filtros. Uma data exata restringe a busca ao
+  dia informado, sem oferecer navegação para semanas fora desse filtro.
+  O filtro **Situação da reserva** oferece **Todas as situações**, **Finalizada**,
+  **Em andamento** e **Prevista**, segundo o início e fim reais. A seleção acompanha
+  o relógio a cada segundo e independe da confirmação do convite da sala.
 - **Lista de reuniões:** na visão geral, mostra somente reuniões que ocupam alguma
   parte do dia atual em Brasília, incluindo dia inteiro e passagem da meia-noite.
   As colunas são **Horário / data**, **Evento**, **Organizador**, **Convidados** e
-  **Situação**. Os convidados aparecem por nome; listas longas são resumidas no
-  modo compacto e exibidas completas ao expandir ou abrir os detalhes do evento.
-  As duas abas mostram faixas de **00:00 a 23:00**, inclusive sem eventos.
-  Nas faixas sem reunião na aba selecionada, somente horário e data aparecem;
-  as demais colunas ficam em branco, sem indicação de disponibilidade.
+  **Situação**. A visualização única mostra uma sequência neutra de horários, de **30 em 30 minutos**
+  por padrão, de 00:00 a 23:30. Quando os horários de início ou fim exigem uma
+  escala menor, apenas aquele dia se adapta ao maior intervalo comum compatível
+  com os eventos (por exemplo, 15, 10, 5 ou 1 minuto). O cálculo considera todas as
+  reuniões do dia e mantém a mesma escala entre Atuais e Histórico. Dias inteiros
+  e eventos de outros dias não reduzem os intervalos. A coluna usa cor e fonte
+  uniformes, sem realçar as horas cheias. Escalas muito pequenas ganham espaço
+  para manter os horários legíveis e a rolagem preserva o trecho que estava aberto.
+  Cada reunião continua em um único bloco. A posição e a altura usam os minutos
+  reais: 13:06–14:06 começa em 13:06 e representa uma hora, sem arredondar.
+  Um ponto discreto no evento acompanha os inícios fora do intervalo padrão.
+  Reuniões simultâneas ficam lado a lado, com as colunas preservadas e rolagem
+  horizontal quando necessário. Eventos de dia inteiro têm uma faixa própria.
+  Reuniões que atravessam a meia-noite ocupam somente a parte do dia exibido,
+  preservando os horários originais nos detalhes. Intervalos vazios ficam em branco.
+  Os blocos resumem os convidados e abrem o modal de detalhes completos ao clicar.
+  Eventos muito curtos mantêm sua altura real na linha do tempo.
   A aba **Atuais** exibe reuniões em andamento e futuras; **Histórico** exibe
   as encerradas hoje. O início e fim reais aparecem junto ao nome do evento,
-  sem arredondamento. Reuniões que atravessam uma hora ficam identificadas como
-  continuação na faixa seguinte, sem aumentar a contagem de reuniões.
+  sem arredondamento nem repetição a cada intervalo.
   As contagens e a separação
   acompanham o relógio a cada segundo; a reunião muda de aba no horário de término.
   À meia-noite a lista muda automaticamente para o novo dia. Eventos sem intervalo
   válido não são atribuídos a hoje; os dados originais são preservados.
-  Na visão geral, a área recolhida tem altura fixa para quatro linhas,
+  Na visão geral, a área recolhida mantém altura fixa equivalente a quatro linhas,
   mesmo quando há menos reuniões ou nenhuma. As abas Atuais e Histórico ficam
   junto ao título e mantêm a mesma altura ao alternar. A rolagem dá acesso às demais
   reuniões, com rodapé compacto junto à base do card.
   Todas as reuniões permanecem na lista. O botão **Exibir tudo** fica sempre
   visível e expande a lista da aba selecionada; **Recolher lista** restaura a rolagem.
-  Abrir a lista, recolher ou trocar de aba posiciona a rolagem perto da hora atual.
+  Abrir, recolher ou trocar de aba posiciona a rolagem perto da hora atual.
   A rolagem manual permanece livre durante as atualizações. **Exibir tudo** mostra
-  todas as faixas do dia mesmo sem reuniões.
-- **Sala de reunião:** dados da sala e as pessoas vinculadas aos seus eventos.
+  o dia completo. O card da sala é apenas informativo, sem botão de navegação.
 - **Detalhes do evento:** início/fim, criador, organizador, descrição, convidados,
   respostas ao convite, acompanhantes e situação da reserva.
 

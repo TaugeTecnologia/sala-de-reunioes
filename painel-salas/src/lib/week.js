@@ -52,14 +52,16 @@ function positionEvents(segments) {
 }
 
 /** Semana exibida de segunda a sábado; não altera nem amplia o período coletado. */
-export function weeklyCalendar(events, period, now = Date.now(), weekOf = now) {
+export function weeklyCalendar(events, period, now = Date.now(), weekOf = now, selectedDate = '') {
   const current = timestamp(now);
   const today = dateKey(current);
   const periodStart = timestamp(period?.inicio);
   const periodEnd = timestamp(period?.fim);
   const intervals = events.map(event => ({ event, start: timestamp(event.inicio), end: timestamp(event.fim) }))
     .filter(item => Number.isFinite(item.start) && Number.isFinite(item.end) && item.end > item.start);
-  return currentWeek(weekOf).slice(0, 6).map(day => {
+  const week = currentWeek(selectedDate || weekOf);
+  const visibleDays = selectedDate ? week.filter(day => day.date === selectedDate) : week.slice(0, 6);
+  return visibleDays.map(day => {
     const isToday = day.date === today;
     const covered = Number.isFinite(periodStart) && Number.isFinite(periodEnd)
       && day.start >= periodStart && day.end <= periodEnd;

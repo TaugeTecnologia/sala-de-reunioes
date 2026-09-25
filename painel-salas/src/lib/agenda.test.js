@@ -66,7 +66,7 @@ test('filtros de sala, confirmação e andamento podem ser combinados', () => {
   const now = new Date('2026-09-22T12:30:00Z');
   assert.equal(filterEvents(events, { sala: room.email.toUpperCase(), status: 'confirmados' }, now).length, 1);
   assert.equal(filterEvents(events, { status: 'pendentes' }, now).length, 1);
-  assert.equal(filterEvents(events, { status: 'em-andamento' }, now).length, 1);
+  assert.equal(filterEvents(events, { status: 'em-andamento' }, now).length, 2);
   assert.equal(filterEvents(events, { sala: 'outra-sala' }, now).length, 0);
 });
 

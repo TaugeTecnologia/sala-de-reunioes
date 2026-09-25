@@ -105,10 +105,19 @@ function roomKey(room) {
 function searchable(event) {
   const people = [event.criador, event.organizador, ...(event.participantes?.lista ?? [])];
   return text([
-    event.nome, event.local,
-    ...people.flatMap(person => [person?.nome, person?.displayName, person?.email]),
-    ...(event.salas ?? []).flatMap(room => [room.nome, room.email]),
+    event.nome,
+    ...people.flatMap(person => [person?.nome, person?.displayName, person?.email,
+      person?.email?.split('@')[0].replace(/[._-]/g, ' ')]),
   ].filter(Boolean).join(' '));
+}
+
+/** Situação temporal, independente da confirmação do convite da sala. */
+export function meetingPhase(event, now = Date.now()) {
+  const start = timestamp(event.inicio);
+  const end = timestamp(event.fim);
+  const current = timestamp(now);
+  if (![start, end, current].every(Number.isFinite) || end <= start) return null;
+  return current >= end ? 'finalizados' : current >= start ? 'em-andamento' : 'previstos';
 }
 
 export function filterEvents(events, { busca = '', data = '', sala = '', status = 'todos' } = {}, now = new Date()) {
@@ -121,10 +130,7 @@ export function filterEvents(events, { busca = '', data = '', sala = '', status 
     if (selectedRoom && !(event.salas ?? []).some(room => roomKey(room) === selectedRoom)) return false;
     if (status === 'confirmados' && event.bloqueio_confirmado !== true) return false;
     if (status === 'pendentes' && event.bloqueio_confirmado === true) return false;
-    const label = eventStatus(event, now).label;
-    if (status === 'finalizados' && label !== 'Finalizado') return false;
-    if (status === 'em-andamento' && label !== 'Em andamento') return false;
-    if (status === 'previstos' && label !== 'Previsto') return false;
+    if (['finalizados', 'em-andamento', 'previstos'].includes(status) && meetingPhase(event, now) !== status) return false;
     return true;
   });
 }
@@ -142,25 +148,6 @@ function localDayStart(now) {
 export function todaysMeetings(events, now = Date.now()) {
   const start = localDayStart(now);
   return Number.isFinite(start) ? events.filter(event => overlaps(event, start, start + DAY)) : [];
-}
-
-/** Faixas visuais do dia; continuações não são novas reuniões. */
-export function hourlyMeetings(events, now = Date.now(), allEvents = events) {
-  const dayStart = localDayStart(now);
-  if (!Number.isFinite(dayStart)) return [];
-  const intervals = events.map(event => ({ event, start: timestamp(event.inicio), end: timestamp(event.fim) }))
-    .filter(item => Number.isFinite(item.start) && Number.isFinite(item.end) && item.end > item.start)
-    .sort((a, b) => a.start - b.start || a.end - b.end);
-  return Array.from({ length: 24 }, (_, hour) => {
-    const start = dayStart + hour * 60 * MINUTE;
-    const end = start + 60 * MINUTE;
-    return {
-      start, end,
-      hasAnyMeeting: allEvents.some(event => overlaps(event, start, end)),
-      entries: intervals.filter(item => item.start < end && item.end > start)
-        .map(item => ({ event: item.event, continuation: item.start < start })),
-    };
-  });
 }
 
 /** Mês de 1 a 12; grade de semanas completas, iniciando na segunda-feira. */

@@ -1,11 +1,13 @@
 import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
-import { eventStatus, filterEvents, formatDate, formatDuration, formatTime, roomAvailability, nextRoomMeeting, splitMeetings, todaysMeetings, hourlyMeetings } from './lib/agenda.js';
+import { eventStatus, filterEvents, formatDate, formatDuration, formatTime, roomAvailability, nextRoomMeeting, splitMeetings, todaysMeetings } from './lib/agenda.js';
+import { meetingTimeline, isOffDefaultInterval } from './lib/meeting-timeline.js';
 import { currentWeek, weeklyCalendar } from './lib/week.js';
+import { maskDateInput, parseDateInput, dateInputCaret, findAgendaFocus, agendaResultWeeks, resultWeekNavigation } from './lib/agenda-filters.js';
 import { connectAgenda, connectionLabel, shouldAcceptAgenda } from './lib/live.js';
 import { watchClock } from './lib/clock.js';
 
 const NAV = [{ id: 'visao-geral', label: 'Visão geral', icon: 'grid' }, { id: 'agenda', label: 'Agenda', icon: 'calendar' }];
-const PAGES = [...NAV.map(item => item.id), 'sala'];
+const PAGES = NAV.map(item => item.id);
 const ANSWERS = { accepted: ['Aceitou', 'green'], declined: ['Recusou', 'red'], tentative: ['Talvez', 'warning'], needsAction: ['Sem resposta', 'neutral'] };
 const EMPTY_FILTERS = { busca: '', data: '', sala: '', status: 'todos' };
 const CALENDAR_HOUR_HEIGHT = 56;
@@ -67,50 +69,107 @@ async function request(url, options) {
 function Pill({ tone = 'neutral', children }) { return <span className={`pill ${tone}`}><span className="pill-dot"/>{children}</span>; }
 function Empty({ title = 'Nenhum evento encontrado', children }) { return <div className="empty-state"><span className="empty-icon"><Icon name="calendar" size={28}/></span><h3>{title}</h3><p>{children || 'Experimente outra data ou ajuste os filtros da agenda.'}</p></div>; }
 
-function EventList({ slots, open, now }) {
-  return <div className="event-list daily-event-list">
-    <div className="event-table-head"><span>Horário / data</span><span>Evento</span><span>Organizador</span><span>Convidados</span><span>Situação</span><span/></div>
-    <div className="event-list-rows">{slots.flatMap(slot => {
-      const date = <div className="event-date"><strong>{formatTime(slot.start)}</strong><small>{formatDate(slot.start, { day: '2-digit', month: 'short' })}</small></div>;
-      if (!slot.entries.length) {
-        return <div className="event-row empty-hour-row" key={slot.start} data-hour={slot.start}>
-          {date}<span/><span/><span/><span/><span/>
-        </div>;
-      }
-      return slot.entries.map(({ event, continuation }) => {
-        const status = eventStatus(event, now);
-        const participants = event.participantes || {};
-        const guests = (participants.lista || []).map(person => `${personName(person)}${person.convidados_adicionais > 0 ? ` (+${person.convidados_adicionais})` : ''}`).join(', ');
-        const guestLabel = guests || (participants.pessoas_convidadas === 0 ? 'Sem convidados' : 'Não informados');
-        const guestDescription = `${guestLabel}${participants.lista_possivelmente_incompleta ? ' · Lista possivelmente incompleta' : ''}`;
-        return <button className="event-row" key={`${slot.start}-${eventKey(event)}`} data-hour={slot.start} onClick={() => open(event)} title={`${event.nome} · ${rangeTime(event)}`} aria-label={`Ver detalhes de ${event.nome}${continuation ? ', continuação nesta faixa' : ''}`}>
-          {date}
-          <div className="event-identity"><span><strong>{event.nome}</strong><small>{continuation ? 'Continuação · ' : ''}{rangeTime(event)}</small></span></div>
-          <span className="event-organizer" title={event.organizador?.email || personName(event.organizador)}>{personName(event.organizador)}</span>
-          <span className="event-guests" title={guestDescription}>{Number.isFinite(participants.pessoas_convidadas) && <small>{participants.pessoas_convidadas} {participants.pessoas_convidadas === 1 ? 'convidado' : 'convidados'}</small>}<span>{guestDescription}</span></span>
-          <Pill tone={status.tone}>{status.label}</Pill><Icon name="chevron" size={17}/>
-        </button>;
-      });
-    })}</div>
+function MeetingHeader({ lanes = 1 }) {
+  return <div className="meeting-view-header" style={{ '--meeting-lanes': lanes }}>
+    <span className="meeting-time-heading">Horário / data</span>
+    {Array.from({ length: lanes }, (_, index) => <div className="meeting-header-lane" key={index}>
+      <span>Evento</span><span>Organizador</span><span>Convidados</span><span>Situação</span><span aria-hidden="true"/>
+    </div>)}
   </div>;
 }
 
-function ScrollableEventList({ events, open, now }) {
+function MeetingTime({ event }) {
+  return <span className="meeting-real-time">
+    {!event.dia_inteiro && isOffDefaultInterval(event.inicio) && <span className="meeting-exact-dot" role="img" title="Horário exato de início" aria-label="Início diferente dos intervalos padrão de 30 minutos"/>}
+    <span>{rangeTime(event)}</span>
+  </span>;
+}
+
+function MeetingFields({ event, status, showTime }) {
+  const participants = event.participantes || {};
+  const guests = (participants.lista || []).filter(Boolean).map(person => `${personName(person)}${person.convidados_adicionais > 0 ? ` (+${person.convidados_adicionais})` : ''}`);
+  const summary = guests.length ? `${guests.slice(0, 2).join(', ')}${guests.length > 2 ? ` +${guests.length - 2}` : ''}` : participants.pessoas_convidadas === 0 ? 'Sem convidados' : 'Não informados';
+  const count = Number.isFinite(participants.pessoas_convidadas) ? `${participants.pessoas_convidadas} ${participants.pessoas_convidadas === 1 ? 'convidado' : 'convidados'}` : 'Convidados';
+  return <div className="meeting-content-grid">
+    <span className="meeting-title-cell"><strong>{event.nome}</strong>{showTime && <MeetingTime event={event}/>}</span>
+    <span className="meeting-organizer-cell" title={event.organizador?.email || personName(event.organizador || {})}>{personName(event.organizador || {})}</span>
+    <span className="meeting-guests-cell" title={`${guests.join(', ') || summary}${participants.lista_possivelmente_incompleta ? ' · Lista possivelmente incompleta' : ''}`}><strong>{count}</strong><small>{summary}{participants.lista_possivelmente_incompleta ? ' · parcial' : ''}</small></span>
+    <Pill tone={status.tone}>{status.label}</Pill><Icon name="chevron" size={14}/>
+  </div>;
+}
+
+function meetingStatus(event, now) {
+  return event.status === 'cancelled' ? { label: 'Cancelada', tone: 'red' } : eventStatus(event, now);
+}
+
+function MeetingItem({ event, now, open, timeline = false, className = '', style }) {
+  const status = meetingStatus(event, now);
+  return <button type="button" className={`meeting-item ${timeline ? 'meeting-block' : 'meeting-list-row'} ${status.tone} ${className}`} style={style}
+    onClick={() => open(event)} title={`${event.nome} · ${rangeTime(event)} · ${status.label}`}
+    aria-label={`${event.nome}. ${rangeTime(event)}. ${personName(event.organizador || {})}. ${status.label}. Ver detalhes.`}>
+    {!timeline && <span className="meeting-date-cell"><MeetingTime event={event}/><small>{formatDate(event.inicio, { day: '2-digit', month: 'short' })}</small></span>}
+    <MeetingFields event={event} status={status} showTime={timeline}/>
+  </button>;
+}
+
+export function MeetingAgenda({ layout, open, now }) {
+  return <div className="meeting-sheet" style={{ '--meeting-lanes': layout.laneCount, '--meeting-sheet-min': `${130 + 650 * layout.laneCount}px`, '--meeting-interval-height': `${layout.intervalHeight}px` }}>
+    <div className="meeting-view-sticky">
+      <MeetingHeader lanes={layout.laneCount}/>
+      {layout.allDay.length > 0 && <div className="meeting-all-day" role="group" aria-label="Reuniões de dia inteiro">{layout.allDay.map(event => <MeetingItem key={eventKey(event)} event={event} now={now} open={open} style={{ width: `calc(130px + (100% - 130px) / ${layout.laneCount})` }}/>)}</div>}
+    </div>
+    <div className="meeting-timeline-body" style={{ height: layout.height }}>
+      <div className="meeting-timeline-guides" aria-hidden="true"/>
+      <div className="meeting-time-axis" aria-hidden="true">
+        {layout.blocks.filter(block => block.lane === 0).map(block => <span key={eventKey(block.event)} className={`meeting-axis-band ${meetingStatus(block.event, now).tone}`} style={{ top: block.top, height: block.height }}/>) }
+        {layout.markers.map(marker => <span key={marker.time} className="meeting-time-mark" style={{ top: marker.top }}>{marker.label}</span>)}
+      </div>
+      <div className="meeting-timeline-events">{layout.blocks.map(block => <MeetingItem
+        key={eventKey(block.event)} event={block.event} now={now} open={open} timeline
+        className={`${block.height < 96 ? 'is-compact' : ''}${block.height < 28 ? ' is-tiny' : ''}${block.lane === 0 ? ' spans-time' : ''}`}
+        style={{ top: block.top, height: block.height,
+          left: block.lane === 0 ? 'calc(-1 * var(--meeting-time-width))' : `calc(${block.lane / layout.laneCount * 100}% + 5px)`,
+          width: block.lane === 0 ? `calc(${100 / layout.laneCount}% + var(--meeting-time-width) - 5px)` : `calc(${100 / layout.laneCount}% - 10px)` }}
+      />)}</div>
+    </div>
+  </div>;
+}
+
+function ScrollableMeetings({ events, dayEvents, open, now }) {
   const [expanded, setExpanded] = useState(false);
   const viewport = useRef(null);
   const listId = useId();
-  const slots = hourlyMeetings(events, now);
-  const dayStart = slots[0]?.start;
+  const layout = meetingTimeline(events, now, dayEvents);
+  const dayStart = layout.dayStart;
+  const previousScroll = useRef(null);
 
   useLayoutEffect(() => {
     const node = viewport.current;
-    if (!node || dayStart === undefined || expanded) return;
-    const current = Date.now();
-    const hour = dayStart + Math.max(0, Math.min(23, Math.floor((current - dayStart) / 3_600_000))) * 3_600_000;
-    const row = node.querySelector(`[data-hour="${hour}"]`);
-    const heading = node.querySelector('.event-table-head');
-    if (row) node.scrollTop = Math.max(0, row.getBoundingClientRect().top - node.getBoundingClientRect().top + node.scrollTop - (heading?.getBoundingClientRect().height || 0) - node.clientTop);
-  }, [dayStart, expanded]);
+    const heading = node?.querySelector('.meeting-view-sticky');
+    if (!heading) return;
+    const update = () => node.style.setProperty('--meeting-sticky-height', `${heading.offsetHeight + 6}px`);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(heading);
+    return () => observer.disconnect();
+  }, []);
+
+  useLayoutEffect(() => {
+    const node = viewport.current;
+    if (!node || dayStart === null) return;
+    const previous = previousScroll.current;
+    previousScroll.current = { dayStart, expanded, minuteHeight: layout.minuteHeight, scrollTop: node.scrollTop };
+    if (previous && previous.dayStart === dayStart && previous.expanded === expanded) {
+      if (!expanded) node.scrollTop = previous.scrollTop / previous.minuteHeight * layout.minuteHeight;
+      previousScroll.current.scrollTop = node.scrollTop;
+      return;
+    }
+    node.scrollLeft = 0;
+    if (expanded) { node.scrollTop = 0; previousScroll.current.scrollTop = 0; return; }
+    const currentMinute = Math.max(0, Math.min(1440, (Date.now() - dayStart) / 60_000));
+    node.scrollTop = Math.max(0, currentMinute * layout.minuteHeight - 48);
+    previousScroll.current.scrollTop = node.scrollTop;
+  }, [dayStart, expanded, layout.minuteHeight]);
 
   function toggleExpanded() {
     if (viewport.current && !expanded) viewport.current.scrollTop = 0;
@@ -118,11 +177,11 @@ function ScrollableEventList({ events, open, now }) {
   }
 
   return <>
-    <div id={listId} ref={viewport} className={`meeting-list-viewport ${expanded ? 'is-expanded' : 'is-limited'}`} role="region" aria-label="Reuniões de hoje na sala" tabIndex={0}>
-      <EventList slots={slots} open={open} now={now}/>
+    <div id={listId} ref={viewport} className={`meeting-list-viewport meetings-view-viewport ${expanded ? 'is-expanded' : 'is-limited'}`} role="region" aria-label={`Agenda com horários de referência a cada ${layout.intervalMinutes} minutos das reuniões de hoje`} tabIndex={0} onScroll={event => { if (previousScroll.current) previousScroll.current.scrollTop = event.currentTarget.scrollTop; }}>
+      <MeetingAgenda layout={layout} open={open} now={now}/>
     </div>
     <div className="meeting-list-actions">
-      <span>{expanded ? 'Todos os horários do dia estão visíveis.' : 'Deslize a lista para ver os horários.'}</span>
+      <span>{layout.laneCount > 1 ? 'Reuniões simultâneas lado a lado · Deslize também na horizontal.' : expanded ? `Dia completo · Horários a cada ${layout.intervalMinutes} min.` : `Horários a cada ${layout.intervalMinutes} min · Deslize para ver os horários.`}</span>
       <button type="button" className="button secondary meetings-toggle" aria-expanded={expanded} aria-controls={listId} onClick={toggleExpanded}>{expanded ? 'Recolher lista' : 'Exibir tudo'}<Icon name="chevron" size={16}/></button>
     </div>
   </>;
@@ -165,23 +224,26 @@ function MeetingsPanel({ data, open }) {
           >{tab.label}<span className="meeting-tab-count">{groups[tab.id].length}</span></button>)}
         </div>
       </div>
-      <p>Hoje, {formatDate(now)} · {total} {total === 1 ? 'reunião' : 'reuniões'} no dia</p>
+      <div className="meeting-view-toolbar">
+        <p>Hoje, {formatDate(now)} · {total} {total === 1 ? 'reunião' : 'reuniões'} no dia</p>
+      </div>
     </div>
     {MEETING_TABS.map(tab => <div
       role="tabpanel" key={tab.id} id={`${tabsId}-panel-${tab.id}`}
       aria-labelledby={`${tabsId}-tab-${tab.id}`} hidden={activeTab !== tab.id}
       className="meeting-tab-panel" tabIndex={0}
-    >{activeTab === tab.id && <ScrollableEventList events={groups[tab.id]} open={open} now={now}/>}</div>)}
+    >{activeTab === tab.id && <ScrollableMeetings events={groups[tab.id]} dayEvents={events} open={open} now={now}/>}</div>)}
   </section>;
 }
 
-function Calendar({ period, events, open, selectDate, selectedDate, selectedWeek, onWeekChange }) {
+function Calendar({ period, events, open, selectDate, selectedDate, selectedWeek, onWeekChange, focusKey = '', highlightMatches = false, resultNavigation = null, onResultWeekChange }) {
   const [now, setNow] = useState(Date.now);
   const viewport = useRef(null);
   const calendarHeader = useRef(null);
+  const lastFocus = useRef('');
   useEffect(() => watchClock(setNow), []);
   const actualWeek = currentWeek(now);
-  const days = weeklyCalendar(events, period, now, selectedWeek ?? now);
+  const days = weeklyCalendar(events, period, now, selectedWeek ?? now, selectedDate);
   const weekStart = days[0].date;
   const weekEnd = days.at(-1).date;
   const today = actualWeek.find(day => day.today).date;
@@ -189,7 +251,12 @@ function Calendar({ period, events, open, selectDate, selectedDate, selectedWeek
   const hasAllDay = days.some(day => day.allDay.length);
 
   function changeWeek(direction) {
-    const next = days[0].start + direction * 7 * 86_400_000;
+    if (resultNavigation) {
+      const target = direction < 0 ? resultNavigation.previous : resultNavigation.next;
+      if (target) onResultWeekChange(target);
+      return;
+    }
+    const next = currentWeek(selectedDate || selectedWeek || now)[0].start + direction * 7 * 86_400_000;
     onWeekChange(next === actualWeek[0].start ? null : next);
   }
 
@@ -206,43 +273,52 @@ function Calendar({ period, events, open, selectDate, selectedDate, selectedWeek
   useLayoutEffect(() => {
     showCurrentTime();
   }, [today, showCurrentTime]);
+  useLayoutEffect(() => {
+    if (!focusKey) { lastFocus.current = ''; return; }
+    if (!viewport.current || lastFocus.current === focusKey) return;
+    const first = days.flatMap(day => day.timed)[0];
+    const hasAllDayEvent = days.some(day => day.allDay.length);
+    if (!first && !hasAllDayEvent) return;
+    viewport.current.scrollTop = hasAllDayEvent ? 0 : Math.max(0, first.startMinute / 60 * CALENDAR_HOUR_HEIGHT - CALENDAR_HOUR_HEIGHT / 2);
+    lastFocus.current = focusKey;
+  }, [focusKey, days]);
 
-  return <section className="panel calendar-panel weekly-calendar">
+  return <section className={`panel calendar-panel weekly-calendar${selectedDate ? ' day-calendar' : ''}`}>
     <div className="panel-heading">
-      <div aria-live="polite" aria-atomic="true"><h2>{isCurrentWeek ? 'Semana atual' : 'Semana selecionada'}</h2><p>{formatDate(weekStart, { day: '2-digit', month: '2-digit' })} — {formatDate(weekEnd)}</p></div>
+      <div aria-live="polite" aria-atomic="true"><h2>{selectedDate ? 'Dia selecionado' : resultNavigation?.index >= 0 ? `Semana ${resultNavigation.index + 1} de ${resultNavigation.total}` : isCurrentWeek ? 'Semana atual' : 'Semana selecionada'}</h2><p>{selectedDate ? formatDate(selectedDate, { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }) : <>{formatDate(weekStart, { day: '2-digit', month: '2-digit' })} — {formatDate(weekEnd)}</>}</p></div>
       <div className="week-toolbar">
-        <span className="calendar-legend"><i/>Evento da sala</span>
-        <div className="week-navigation" role="group" aria-label="Navegar pelas semanas">
-          <button type="button" className="week-previous" onClick={() => changeWeek(-1)}><Icon name="chevron" size={16}/>Semana anterior</button>
-          <button type="button" onClick={() => changeWeek(1)}>Próxima semana<Icon name="chevron" size={16}/></button>
+        <span className="calendar-legend"><i/>{highlightMatches ? 'Resultado dos filtros' : 'Evento da sala'}</span>
+        <div className="week-navigation" role="group" aria-label={resultNavigation ? 'Navegar pelas semanas com resultados dos filtros' : 'Navegar pelas semanas'}>
+          <button type="button" className="week-previous" disabled={Boolean(resultNavigation && !resultNavigation.previous)} aria-label={resultNavigation ? 'Semana anterior com resultados' : 'Semana anterior'} onClick={() => changeWeek(-1)}><Icon name="chevron" size={16}/>{resultNavigation ? 'Anterior' : 'Semana anterior'}</button>
+          <button type="button" disabled={Boolean(resultNavigation && !resultNavigation.next)} aria-label={resultNavigation ? 'Próxima semana com resultados' : 'Próxima semana'} onClick={() => changeWeek(1)}>{resultNavigation ? 'Próxima' : 'Próxima semana'}<Icon name="chevron" size={16}/></button>
         </div>
       </div>
     </div>
-    <div className="week-scroll" ref={viewport} role="region" aria-label="Calendário semanal, com rolagem pelos horários" tabIndex={0} style={{ '--week-hour-height': `${CALENDAR_HOUR_HEIGHT}px` }}>
+    <div className="week-scroll" ref={viewport} role="region" aria-label={`Calendário ${selectedDate ? 'do dia selecionado' : 'semanal'}, com rolagem pelos horários`} tabIndex={0} style={{ '--week-hour-height': `${CALENDAR_HOUR_HEIGHT}px` }}>
       <div className="week-grid">
         <div className="week-sticky-header" ref={calendarHeader}>
           <div className="week-heading-row">
             <div className="week-corner">Horário</div>
             {days.map(day => <button type="button" key={day.date}
-              className={`week-day-heading ${day.today ? 'is-today' : ''} ${day.date === selectedDate ? 'is-selected' : ''} ${!day.covered ? 'is-unavailable' : ''}`}
+              className={`week-day-heading ${day.today ? 'is-today' : ''} ${day.date === selectedDate ? 'is-selected' : ''}`}
               disabled={!day.covered} aria-current={day.today ? 'date' : undefined}
               aria-pressed={day.date === selectedDate}
               onClick={() => selectDate(day.date === selectedDate ? '' : day.date)} aria-label={`Filtrar agenda de ${formatDate(day.date, { weekday: 'long', day: 'numeric', month: 'long' })}${!day.covered ? ', fora do período consultado' : ''}`}
-            ><span>{formatDate(day.date, { weekday: 'short' }).replace('.', '')}</span><strong>{formatDate(day.date, { day: '2-digit', month: '2-digit' })}</strong>{!day.covered && <small>Sem dados</small>}</button>)}
+            ><span>{formatDate(day.date, { weekday: 'short' }).replace('.', '')}</span><strong>{formatDate(day.date, { day: '2-digit', month: '2-digit' })}</strong></button>)}
           </div>
           {hasAllDay && <div className="week-all-day-row">
             <div className="week-corner">Dia inteiro</div>
-            {days.map(day => <div className="week-all-day-cell" key={day.date}>{day.allDay.map(event => <button type="button" className="week-all-day-event" key={eventKey(event)} onClick={() => open(event)} title={event.nome} aria-label={`${event.nome}, dia inteiro, ${formatDate(day.date)}. Ver detalhes.`}>{event.nome}</button>)}</div>)}
+            {days.map(day => <div className="week-all-day-cell" key={day.date}>{day.allDay.map(event => <button type="button" className={`week-all-day-event${highlightMatches ? ' is-filter-match' : ''}`} key={eventKey(event)} onClick={() => open(event)} title={event.nome} aria-label={`${event.nome}, dia inteiro, ${formatDate(day.date)}. Ver detalhes.`}>{event.nome}</button>)}</div>)}
           </div>}
         </div>
         <div className="week-time-grid" style={{ height: 24 * CALENDAR_HOUR_HEIGHT }}>
           <div className="week-hours">{CALENDAR_HOURS.map(hour => <span className="week-hour" key={hour} style={{ top: hour * CALENDAR_HOUR_HEIGHT }}>{String(hour).padStart(2, '0')}:00</span>)}</div>
-          {days.map(day => <div className={`week-day-column ${day.today ? 'is-today' : ''} ${!day.covered ? 'is-unavailable' : ''}`} key={day.date} role="group" aria-label={formatDate(day.date, { weekday: 'long', day: 'numeric', month: 'long' })}>
+          {days.map(day => <div className={`week-day-column ${day.today ? 'is-today' : ''}`} key={day.date} role="group" aria-label={formatDate(day.date, { weekday: 'long', day: 'numeric', month: 'long' })}>
             {day.timed.map(segment => {
               const event = segment.event;
               const status = eventStatus(event, now);
               const short = segment.displayEndMinute - segment.startMinute < 35;
-              return <button type="button" key={eventKey(event)} className={`weekly-event ${status.tone} ${short ? 'is-short' : ''}`} onClick={() => open(event)}
+              return <button type="button" key={eventKey(event)} className={`weekly-event ${status.tone} ${short ? 'is-short' : ''}${highlightMatches ? ' is-filter-match' : ''}`} onClick={() => open(event)}
                 title={`${event.nome} · ${rangeTime(event)} · ${status.label}`}
                 aria-label={`${event.nome}, ${formatDate(day.date)}, ${rangeTime(event)}, ${status.label}. Ver detalhes.`}
                 style={{ top: segment.startMinute / 60 * CALENDAR_HOUR_HEIGHT, height: (segment.displayEndMinute - segment.startMinute) / 60 * CALENDAR_HOUR_HEIGHT, left: `calc(${segment.column / segment.columns * 100}% + 3px)`, width: `calc(${100 / segment.columns}% - 6px)` }}
@@ -253,7 +329,6 @@ function Calendar({ period, events, open, selectDate, selectedDate, selectedWeek
         </div>
       </div>
     </div>
-    {days.some(day => !day.covered) && <p className="week-coverage">Dados disponíveis de {formatDate(period.inicio)} até {formatDate(new Date(Date.parse(period.fim) - 1))}. Os demais dias não foram consultados.</p>}
     <div className="calendar-footer"><Icon name="info" size={15}/><span>Horários de Brasília · Clique em um evento para ver os detalhes.</span></div>
   </section>;
 }
@@ -303,7 +378,7 @@ function TodayCard() {
   </article>;
 }
 
-function Overview({ data, open, goRoom, liveState, liveConnection }) {
+function Overview({ data, open, liveState, liveConnection }) {
   const room = data.salas[0];
   return <>
     <div className="stats-grid">
@@ -320,7 +395,6 @@ function Overview({ data, open, goRoom, liveState, liveConnection }) {
           <div className="room-feature-visual"><RoomDrawing/></div>
           <h2>{roomLabel(room?.nome) || 'Sala de reunião'}</h2>
           <p>Os encontros da equipe, em um só lugar.</p>
-          <button className="room-link" onClick={goRoom}>Conhecer a agenda da sala <Icon name="arrow" size={18}/></button>
         </section>
       </div>
     </div>
@@ -328,38 +402,89 @@ function Overview({ data, open, goRoom, liveState, liveConnection }) {
 }
 
 function Agenda({ data, filters, setFilters, open }) {
+  const [now, setNow] = useState(Date.now);
   const [selectedWeek, setSelectedWeek] = useState(() => filters.data || null);
-  const events = filterEvents(data.eventos, filters);
+  const [resultDay, setResultDay] = useState('');
+  const [dateText, setDateText] = useState(() => filters.data ? formatDate(filters.data) : '');
+  const dateInput = useRef(null);
+  const dateCaret = useRef(null);
+  const dateMessageId = useId();
+  useEffect(() => watchClock(setNow), []);
+  useLayoutEffect(() => {
+    if (dateCaret.current === null || !dateInput.current) return;
+    dateInput.current.setSelectionRange(dateCaret.current, dateCaret.current);
+    dateCaret.current = null;
+  }, [dateText]);
+  const events = filterEvents(data.eventos, filters, now);
+  const selectedDate = filters.data || resultDay;
+  const activeFilters = Boolean(filters.busca.trim() || filters.data || filters.sala || filters.status !== 'todos');
+  const resultWeeks = activeFilters ? agendaResultWeeks(events, data.periodo, filters.data) : [];
+  const resultNavigation = activeFilters ? { ...resultWeekNavigation(resultWeeks, selectedDate || selectedWeek || now), total: resultWeeks.length } : null;
+  const visibleDays = weeklyCalendar(events, data.periodo, now, selectedWeek ?? now, selectedDate);
+  const visibleCount = new Set(visibleDays.flatMap(day => [...day.allDay, ...day.timed.map(item => item.event)])).size;
+  const dateIncomplete = Boolean(dateText && !parseDateInput(dateText));
+  const focusKey = activeFilters ? JSON.stringify([filters, selectedWeek, selectedDate]) : '';
+
+  function focusResults(matches) {
+    const focus = findAgendaFocus(matches, data.periodo, now, selectedWeek ?? now);
+    if (!focus) return;
+    setSelectedWeek(focus.date);
+    // A semana continua de segunda a sábado; uma busca específica também pode
+    // revelar um resultado de domingo na visualização de um único dia.
+    setResultDay(focus.sunday ? focus.date : '');
+  }
+  function navigateResults(week) {
+    if (!week) return;
+    setSelectedWeek(week.date);
+    setResultDay(week.sunday ? week.focusDate : '');
+  }
   const change = (key, value) => {
-    setFilters(previous => ({ ...previous, [key]: value }));
-    if (key === 'data' && value) setSelectedWeek(value);
+    const next = { ...filters, [key]: value };
+    setFilters(next);
+    if (key === 'data') {
+      setDateText(value ? formatDate(value) : '');
+      setSelectedWeek(value || null);
+      setResultDay('');
+    } else if (!next.data) {
+      if (next.busca.trim() || next.status !== 'todos' || next.sala) focusResults(filterEvents(data.eventos, next, now));
+      else { setSelectedWeek(null); setResultDay(''); }
+    }
   };
+  function changeDate(event) {
+    const raw = event.target.value;
+    const masked = maskDateInput(raw);
+    const digitsBeforeCaret = raw.slice(0, event.target.selectionStart ?? raw.length).replace(/\D/g, '').length;
+    dateCaret.current = dateInputCaret(masked, digitsBeforeCaret);
+    const parsed = parseDateInput(masked);
+    if (parsed || !masked) change('data', parsed || '');
+    setDateText(masked);
+  }
+  function editDate(event) {
+    const input = event.currentTarget;
+    const start = input.selectionStart;
+    if (start !== input.selectionEnd) return;
+    if (event.key === 'Backspace' && input.value[start - 1] === '/') input.setSelectionRange(start - 2, start);
+    if (event.key === 'Delete' && input.value[start] === '/') input.setSelectionRange(start, start + 2);
+  }
   const changeWeek = week => {
     setSelectedWeek(week);
+    setResultDay('');
+    setDateText('');
     setFilters(previous => ({ ...previous, data: '' }));
   };
   return <section className="panel agenda-panel"><div className="filters">
-    <label className="search-field"><span className="sr-only">Buscar evento ou pessoa</span><Icon name="search"/><input value={filters.busca} placeholder="Buscar evento ou pessoa..." onChange={e => change('busca', e.target.value)}/></label>
-    <label><span>Data</span><input type="date" value={filters.data} onChange={e => change('data', e.target.value)}/></label>
-    <label><span>Situação da reserva</span><select value={filters.status} onChange={e => change('status', e.target.value)}><option value="todos">Todas as situações</option><option value="confirmados">Confirmadas</option><option value="pendentes">Pendentes</option></select></label>
+    <label className="search-field"><span className="sr-only">Buscar nome da reunião ou pessoa</span><Icon name="search"/><input type="search" value={filters.busca} placeholder="Buscar reunião ou pessoa..." onChange={e => change('busca', e.target.value)}/></label>
+    <label className="date-filter"><span>Data</span><input ref={dateInput} type="text" inputMode="numeric" autoComplete="off" placeholder="DD/MM/AAAA" value={dateText} aria-invalid={dateIncomplete && dateText.length === 10} aria-describedby={dateIncomplete ? dateMessageId : undefined} onChange={changeDate} onKeyDown={editDate}/></label>
+    <label><span>Situação da reserva</span><select value={filters.status} onChange={e => change('status', e.target.value)}><option value="todos">Todas as situações</option><option value="finalizados">Finalizada</option><option value="em-andamento">Em andamento</option><option value="previstos">Prevista</option></select></label>
     {data.salas.length > 1 && <label><span>Sala</span><select value={filters.sala} onChange={e => change('sala', e.target.value)}><option value="">Todas as salas</option>{data.salas.map(s => <option value={s.id} key={s.id}>{roomLabel(s.nome)}</option>)}</select></label>}
-    <button className="filter-reset" onClick={() => { setFilters({ ...EMPTY_FILTERS }); setSelectedWeek(null); }}>Limpar</button>
-  </div><Calendar period={data.periodo} events={events} open={open} selectDate={date => change('data', date)} selectedDate={filters.data} selectedWeek={selectedWeek} onWeekChange={changeWeek}/></section>;
-}
-
-function RoomPage({ data, goAgenda }) {
-  const contacts = new Map();
-  for (const event of data.eventos) {
-    const people = [...(event.participantes?.lista || []), event.criador, event.organizador];
-    const counted = new Set();
-    for (const p of people) if (p?.email && data.emailsVinculados.includes(p.email.toLowerCase()) && !counted.has(p.email.toLowerCase())) {
-      const email = p.email.toLowerCase(); counted.add(email);
-      const prior = contacts.get(email);
-      contacts.set(email, { ...p, email, count: (prior?.count || 0) + 1 });
-    }
-  }
-  return <div className="room-page-grid"><section className="panel rooms-info"><span className="overline">GOOGLE CALENDAR</span><h2>Um lugar para conectar a equipe.</h2><p className="subtle">Acompanhe os encontros registrados nas agendas das salas selecionadas.</p>{data.salas.map(room => <article className="room-info-card" key={room.id}><span className="stat-icon blue"><Icon name="room" size={25}/></span><h3>{roomLabel(room.nome)}</h3><Pill tone="blue">Agenda acompanhada</Pill><dl><dt>Período consultado</dt><dd>Setembro de {data.periodo.ano}</dd><dt>Fuso horário</dt><dd>Brasília · UTC−03:00</dd><dt>Última atualização</dt><dd>{formatDate(data.geradoEm)} às {formatTime(data.geradoEm)}</dd></dl></article>)}<button className="button primary" onClick={() => goAgenda('')}>Consultar agenda <Icon name="arrow" size={17}/></button></section>
-    <section className="panel contacts-panel"><div className="panel-heading"><div><h2>Pessoas vinculadas</h2><p>Criadores, organizadores e convidados dos eventos.</p></div><span className="count-badge">{contacts.size}</span></div>{contacts.size ? <div className="contacts-list">{[...contacts.values()].sort((a, b) => personName(a).localeCompare(personName(b), 'pt-BR')).map(person => <article className="contact" key={person.email}><span className="avatar">{initials(person)}</span><div><strong>{personName(person)}</strong><span>{person.email}</span></div><small>{person.count} {person.count === 1 ? 'evento' : 'eventos'}</small></article>)}</div> : <Empty title="Nenhuma pessoa informada">Os contatos aparecerão quando estiverem disponíveis nos eventos da sala.</Empty>}</section></div>;
+    <button className="filter-reset" onClick={() => { setFilters({ ...EMPTY_FILTERS }); setSelectedWeek(null); setResultDay(''); setDateText(''); }}>Limpar</button>
+  </div>
+    {dateIncomplete && <p className="filter-feedback" id={dateMessageId} role="status">{dateText.length === 10 ? 'Data inválida. Confira o dia, o mês e o ano.' : 'Digite os oito números: dia, mês e ano. A nova data será aplicada quando estiver completa.'}</p>}
+    {activeFilters && <div className="agenda-filter-results">
+      <p role="status">{events.length ? `${events.length} ${events.length === 1 ? 'reunião encontrada' : 'reuniões encontradas'} · ${visibleCount} ${selectedDate ? 'neste dia' : 'nesta semana'}.` : 'Nenhuma reunião encontrada com esses filtros no período consultado.'}</p>
+    </div>}
+    <Calendar period={data.periodo} events={events} open={open} selectDate={date => change('data', date)} selectedDate={selectedDate} selectedWeek={selectedWeek} onWeekChange={changeWeek} focusKey={focusKey} highlightMatches={activeFilters} resultNavigation={resultNavigation} onResultWeekChange={navigateResults}/>
+  </section>;
 }
 
 function EventDetail({ event, close }) {
@@ -423,8 +548,6 @@ export default function App() {
   }, [year]);
   useEffect(() => { if (data && detailKey && !data.eventos.some(event => eventKey(event) === detailKey)) setDetailKey(null); }, [data, detailKey]);
   useEffect(() => { const callback = () => setPage(PAGES.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'visao-geral'); window.addEventListener('hashchange', callback); return () => window.removeEventListener('hashchange', callback); }, []);
-  function navigate(next) { location.hash = next; setPage(next); }
-  function goAgenda(date) { setFilters({ ...EMPTY_FILTERS, data: date }); navigate('agenda'); }
   async function synchronize() {
     setManualLoading(true); setSyncMessage('Solicitando atualização da agenda…');
     try {
@@ -434,19 +557,18 @@ export default function App() {
     } catch (e) { if (alive.current) setSyncMessage(e.message); }
     finally { if (alive.current) setManualLoading(false); }
   }
-  const title = page === 'agenda' ? 'Agenda da sala' : page === 'sala' ? 'Sala de reunião' : 'Visão geral';
+  const title = page === 'agenda' ? 'Agenda da sala' : 'Visão geral';
   return <div className="app-shell"><a className="skip-link" href="#conteudo" onClick={event => { event.preventDefault(); document.getElementById('conteudo')?.focus(); }}>Pular para o conteúdo</a>
     <aside className="sidebar"><div className="brand"><img src="/brand/tauge-logo-light.svg" alt="Tauge Tecnologia" width="190" height="49" draggable={false}/></div><div className="workspace-tag"><span><Icon name="room" size={21}/></span><div><strong>Salas & encontros</strong><small>Gestão de espaços</small></div></div><p className="nav-label">ESPAÇO DE TRABALHO</p><nav aria-label="Navegação principal">{NAV.map(item => <a key={item.id} href={`#${item.id}`} className={page === item.id ? 'active' : ''} aria-current={page === item.id ? 'page' : undefined}><Icon name={item.icon}/>{item.label}{page === item.id && <span className="nav-active-dot"/>}</a>)}</nav><div className="sidebar-bottom"><div className="calendar-source"><GoogleMark/><div><strong>Google Calendar</strong><small>Dados da agenda da sala</small></div></div><div className="sidebar-footer"><span className="read-dot"/>Painel de acompanhamento</div></div></aside>
     <main id="conteudo" tabIndex={-1}><header className="topbar"><span>Gestão de espaços <Icon name="chevron" size={13}/> <strong>{title}</strong></span><div className="topbar-right"><span className="timezone">Brasília · UTC−03:00</span><span className="workspace-avatar"><img src="/brand/tauge-symbol.svg" width="30" height="30" alt="Tauge" draggable={false}/></span></div></header>
-      <div className="main-content"><div className="page-heading"><div><h1>{title}</h1>{page !== 'visao-geral' && <p>{page === 'agenda' ? 'Datas, horários e pessoas. Tudo em uma única agenda.' : 'Conheça a sala e as pessoas que compartilham esse espaço.'}</p>}</div></div>
+      <div className="main-content"><div className="page-heading"><div><h1>{title}</h1>{page === 'agenda' && <p>Datas, horários e pessoas. Tudo em uma única agenda.</p>}</div></div>
       <div className="data-meta"><span><span className="read-dot"/>{data ? `Dados atualizados em ${formatDate(data.geradoEm)} às ${formatTime(data.geradoEm)}` : 'Agenda da sala de reunião'}</span></div>
       {liveState?.estado === 'erro' && <div className="sync-message live-error" role="alert"><Icon name="info" size={17}/><span>{liveState.mensagem} Os últimos dados disponíveis foram mantidos.</span></div>}
       {error && data && <div className="sync-message live-error" role="alert"><Icon name="info" size={17}/><span>{error} Exibindo os últimos dados recebidos.</span></div>}
       {syncMessage && <div className="sync-message" role="status"><Icon name="info" size={17}/><span>{syncMessage}</span><button aria-label="Dispensar mensagem" onClick={() => setSyncMessage('')} className="icon-button"><Icon name="close" size={16}/></button></div>}
       {error && !data && liveState?.estado !== 'executando' ? <section className="panel error-panel"><Empty title="A agenda ainda não está disponível">{error}</Empty><button className="button secondary" onClick={load}>Tentar novamente</button></section> : !data ? <div className="loading-state" role="status"><span className="loader"/><p>Preparando a agenda da sala…</p></div> : <>
-        {page === 'visao-geral' && <Overview data={data} open={setDetail} goRoom={() => navigate('sala')} liveState={liveState} liveConnection={liveConnection}/>}
+        {page === 'visao-geral' && <Overview data={data} open={setDetail} liveState={liveState} liveConnection={liveConnection}/>}
         {page === 'agenda' && <Agenda data={data} filters={filters} setFilters={setFilters} open={setDetail}/>}
-        {page === 'sala' && <RoomPage data={data} goAgenda={goAgenda}/>}
         {data.avisos?.length > 0 && <div className="coverage-note"><Icon name="info" size={17}/><div><strong>Sobre a cobertura dos dados</strong><p>{[...new Set(data.avisos)].join(' ')}</p></div></div>}
       </>}
       <footer className="main-footer"><span>GESTÃO DE ESPAÇOS</span></footer>
