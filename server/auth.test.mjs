@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { request as httpRequest } from 'node:http';
 import { createApp } from './app.mjs';
 import { createAuth, hashPassword, verifyPassword } from './auth.mjs';
 
@@ -105,4 +106,36 @@ test('login com Google valida cliente, emissor, verificação e domínio', async
 test('sem GOOGLE_CLIENT_ID o acesso com Google fica indisponível', async (t) => {
   const { call } = await setup(t, { googleClientId: '' });
   assert.equal((await call('/api/auth/google', { method: 'POST', body: { credential: 'x'.repeat(40) } })).status, 503);
+});
+
+test('front em outro domínio: CORS com cookies só para origens autorizadas', async (t) => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'sala-cors-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const usersFile = path.join(dir, 'usuarios.json');
+  await writeFile(usersFile, JSON.stringify({ usuarios: [{ email: 'ana@tauge.com', hash: hashPassword('senha-correta-1') }] }));
+  const auth = createAuth({ domain: 'tauge.com', usersFile, secret: 's', crossSite: true });
+  const front = 'https://taugetecnologia.github.io';
+  const { server } = createApp({ auth, allowedOrigins: [front], allowedHosts: ['api.tauge.com'], load: async () => ({ eventos: [] }) });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(async () => { server.closeAllConnections(); await new Promise((resolve) => server.close(resolve)); });
+  const port = server.address().port;
+  const send = (route, { method = 'GET', origin, host = 'api.tauge.com', body } = {}) => new Promise((resolve, reject) => {
+    const req = httpRequest({ port, host: '127.0.0.1', path: route, method, headers: { Host: host, ...(origin ? { Origin: origin, 'Sec-Fetch-Site': 'cross-site' } : {}), ...(body ? { 'Content-Type': 'application/json' } : {}) } }, (res) => {
+      let data = ''; res.on('data', (chunk) => { data += chunk; }); res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: data }));
+    });
+    req.on('error', reject); req.end(body ? JSON.stringify(body) : undefined);
+  });
+
+  const preflight = await send('/api/auth/entrar', { method: 'OPTIONS', origin: front });
+  assert.equal(preflight.status, 204);
+  assert.equal(preflight.headers['access-control-allow-origin'], front);
+  assert.equal(preflight.headers['access-control-allow-credentials'], 'true');
+
+  const login = await send('/api/auth/entrar', { method: 'POST', origin: front, body: { email: 'ana@tauge.com', senha: 'senha-correta-1' } });
+  assert.equal(login.status, 200);
+  assert.equal(login.headers['access-control-allow-origin'], front);
+  assert.match(login.headers['set-cookie'][0], /Secure; SameSite=None/);
+
+  assert.equal((await send('/api/auth/sessao', { origin: 'https://evil.example' })).status, 403);
+  assert.equal((await send('/api/auth/sessao', { origin: front, host: 'outro.exemplo.com' })).status, 403);
 });

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { apiFetch } from './lib/api.js';
 import { connectAgenda, shouldAcceptAgenda } from './lib/live.js';
 import { mergeAgendas, monthPeriod } from './lib/periods.js';
 
@@ -33,7 +34,7 @@ export function useAgendaPeriods(requested) {
         onState: state => { if (active) setStates(previous => ({ ...previous, [period.key]: state })); },
         onConnection: connection => { if (active) setConnections(previous => ({ ...previous, [period.key]: connection })); },
       });
-      fetch(`/api/agenda?ano=${period.ano}&mes=${period.mes}`, { cache: 'no-store', signal: abort.signal })
+      apiFetch(`/api/agenda?ano=${period.ano}&mes=${period.mes}`, { cache: 'no-store', signal: abort.signal })
         .then(async response => {
           if (response.status === 401) { window.dispatchEvent(new Event('sessao-expirada')); return; }
           if (response.status === 404) return; // O SSE inicia a primeira coleta desse mês.

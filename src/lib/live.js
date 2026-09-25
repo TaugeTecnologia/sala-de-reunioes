@@ -1,4 +1,5 @@
 import { periodAt } from './periods.js';
+import { API_BASE, apiUrl } from './api.js';
 
 /** Uma conexão por mês consultado; o servidor compartilha a coleta entre abas. */
 export function connectAgenda({ year, month = periodAt().mes, onAgenda, onState, onConnection, EventSourceClass = globalThis.EventSource }) {
@@ -6,7 +7,7 @@ export function connectAgenda({ year, month = periodAt().mes, onAgenda, onState,
   let source;
   onConnection('conectando');
   try {
-    source = new EventSourceClass(`/api/eventos?ano=${encodeURIComponent(year)}&mes=${encodeURIComponent(month)}`);
+    source = new EventSourceClass(apiUrl(`/api/eventos?ano=${encodeURIComponent(year)}&mes=${encodeURIComponent(month)}`), API_BASE ? { withCredentials: true } : undefined);
   } catch {
     onConnection('indisponivel');
     return () => { active = false; };

@@ -4,19 +4,25 @@ import { createAuth } from './auth.mjs';
 
 const secret = process.env.SESSAO_SEGREDO;
 if (!secret) console.warn('SESSAO_SEGREDO não definido: as sessões serão encerradas a cada reinicialização.');
+const list = (value) => (value || '').split(',').map((item) => item.trim()).filter(Boolean);
+const allowedOrigins = list(process.env.ORIGENS_PERMITIDAS);
+const allowedHosts = list(process.env.HOSTS_PERMITIDOS);
+const listenHost = process.env.HOST || '127.0.0.1';
+const port = Number(process.env.PORTA) || 8787;
 const auth = createAuth({
+  crossSite: allowedOrigins.length > 0,
   domain: process.env.EMAIL_DOMINIO || 'tauge.com',
   googleClientId: process.env.GOOGLE_CLIENT_ID || '',
   usersFile: path.resolve(process.env.USUARIOS_ARQUIVO || 'usuarios.json'),
   secret: secret || undefined,
 });
 if (!auth.googleClientId) console.warn('GOOGLE_CLIENT_ID não definido: o acesso com Google ficará indisponível.');
-const { server, stop: stopApp } = createApp({ auth });
-server.listen(8787, '127.0.0.1', () => {
-  console.log('Painel de salas: http://127.0.0.1:8787');
+const { server, stop: stopApp } = createApp({ auth, allowedOrigins, allowedHosts });
+server.listen(port, listenHost, () => {
+  console.log(`Painel de salas: http://${listenHost}:${port}`);
 });
 server.on('error', (error) => {
-  console.error(error.code === 'EADDRINUSE' ? 'A porta 8787 já está em uso. Encerre o outro painel e tente novamente.' : 'Não foi possível iniciar o servidor local.');
+  console.error(error.code === 'EADDRINUSE' ? `A porta ${port} já está em uso. Encerre o outro painel e tente novamente.` : 'Não foi possível iniciar o servidor local.');
   stopApp();
   process.exit(1);
 });

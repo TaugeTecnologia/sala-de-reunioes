@@ -7,6 +7,7 @@
     "dev": "node scripts/dev.mjs",
     "build": "vite build",
     "start": "node --env-file-if-exists=.env server/index.mjs",
+    "publicar": "bash scripts/publicar-pages.sh",
     "usuario": "node --env-file-if-exists=.env scripts/usuario.mjs",
     "test": "node --test src/lib/*.test.js server/*.test.mjs"
   },

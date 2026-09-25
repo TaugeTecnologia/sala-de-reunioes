@@ -56,3 +56,4 @@
   .login-panel { align-items: flex-start; padding: 28px 20px 40px; }
 }
 @media (max-width: 720px) { .user-name { display: none; } .user-menu { padding-left: 10px; } }
+.login-retry { align-self: flex-start; margin: -6px 0 16px; padding: 6px 0; border: 0; background: none; color: #006e8f; font-size: 13px; font-weight: 500; text-decoration: underline; }

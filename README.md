@@ -33,6 +33,21 @@ Todas as rotas `/api/*` exigem sessão. A tela de entrada aceita o **e-mail inst
 A sessão dura 8 horas e usa cookie `HttpOnly` com `SameSite=Strict`. Após 5 tentativas erradas, o
 e-mail e o endereço de origem ficam bloqueados por 1 minuto.
 
+## Publicação: front no GitHub Pages, backend neste servidor
+
+- **Backend** (`server/`): roda neste servidor (`npm start`) e guarda credenciais, usuários e dados.
+  Ele precisa ficar acessível por **HTTPS** (proxy reverso ou túnel) em um endereço como
+  `https://api.tauge.com`. No `.env`, defina `ORIGENS_PERMITIDAS=https://taugetecnologia.github.io`
+  e `HOSTS_PERMITIDOS=api.tauge.com`.
+- **Front** (`src/`): publicado em https://taugetecnologia.github.io/sala-de-reunioes/ com
+  `VITE_API_URL=https://api.tauge.com npm run publicar`. Sem `VITE_API_URL`, o site abre a tela de
+  login com aviso de servidor indisponível.
+- **Google:** em *Origens JavaScript autorizadas* do cliente OAuth, inclua
+  `https://taugetecnologia.github.io`.
+- **Cookies:** navegadores como o Safari bloqueiam cookies de terceiros. Para o login se manter em
+  todos eles, use um domínio próprio para os dois lados (por exemplo `salas.tauge.com` no Pages e
+  `api.tauge.com` no backend), que ficam no mesmo site.
+
 ## O que aparece
 
 - **Visão geral:** situação atual da sala, próxima reunião, dia da semana e data

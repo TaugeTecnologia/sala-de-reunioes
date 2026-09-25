@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { apiFetch } from './lib/api.js';
 
 const GSI_SRC = 'https://accounts.google.com/gsi/client';
 
@@ -14,7 +15,7 @@ function loadGoogleScript() {
 }
 
 async function post(route, body) {
-  const response = await fetch(`/api/auth/${route}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const response = await apiFetch(`/api/auth/${route}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.erro || 'Não foi possível entrar. Tente novamente.');
   return data;
@@ -36,7 +37,7 @@ function GoogleButton({ clientId, onCredential, onError }) {
   return failed ? null : <div ref={container} className="google-slot" aria-label="Entrar com o Google" />;
 }
 
-export default function Login({ config, onAuthenticated }) {
+export default function Login({ config, onAuthenticated, offline = false, onRetry }) {
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -60,7 +61,7 @@ export default function Login({ config, onAuthenticated }) {
 
   return <div className="login">
     <section className="login-brand" aria-hidden="false">
-      <img className="login-logo" src="/brand/tauge-logo-light.svg" alt="Tauge Tecnologia" width="240" height="62" draggable={false}/>
+      <img className="login-logo" src={`${import.meta.env.BASE_URL}brand/tauge-logo-light.svg`} alt="Tauge Tecnologia" width="240" height="62" draggable={false}/>
       <div className="login-hero">
         <p className="login-eyebrow">Gestão de espaços</p>
         <h1>Sala de Reuniões</h1>
@@ -71,18 +72,19 @@ export default function Login({ config, onAuthenticated }) {
     </section>
     <main className="login-panel">
       <form className="login-card" onSubmit={submit} noValidate>
-        <img className="login-symbol" src="/brand/tauge-symbol.svg" alt="" width="46" height="46" draggable={false}/>
+        <img className="login-symbol" src={`${import.meta.env.BASE_URL}brand/tauge-symbol.svg`} alt="" width="46" height="46" draggable={false}/>
         <h2>Entrar</h2>
         <p className="login-lead">Acesse com seu e-mail institucional da Tauge.</p>
-        <div className="login-error" role="alert" aria-live="assertive">{error}</div>
+        <div className="login-error" role="alert" aria-live="assertive">{offline ? 'O servidor de acesso está indisponível no momento, por isso não é possível entrar agora.' : error}</div>
+        {offline && <button type="button" className="login-retry" onClick={onRetry}>Tentar novamente</button>}
         <label htmlFor="login-email">E-mail institucional</label>
-        <input id="login-email" type="email" inputMode="email" autoComplete="username" autoFocus required value={email} onChange={event => setEmail(event.target.value)} placeholder={`nome@${domain}`} disabled={busy}/>
+        <input id="login-email" type="email" inputMode="email" autoComplete="username" autoFocus required value={email} onChange={event => setEmail(event.target.value)} placeholder={`nome@${domain}`} disabled={busy || offline}/>
         <label htmlFor="login-senha">Senha</label>
         <div className="password-field">
-          <input id="login-senha" type={showPassword ? 'text' : 'password'} autoComplete="current-password" required value={senha} onChange={event => setSenha(event.target.value)} placeholder="Sua senha" disabled={busy}/>
+          <input id="login-senha" type={showPassword ? 'text' : 'password'} autoComplete="current-password" required value={senha} onChange={event => setSenha(event.target.value)} placeholder="Sua senha" disabled={busy || offline}/>
           <button type="button" className="password-toggle" onClick={() => setShowPassword(value => !value)} aria-pressed={showPassword}>{showPassword ? 'Ocultar' : 'Mostrar'}</button>
         </div>
-        <button className="login-submit" type="submit" disabled={busy || !email.trim() || !senha}>{busy ? 'Entrando…' : 'Entrar'}</button>
+        <button className="login-submit" type="submit" disabled={offline || busy || !email.trim() || !senha}>{busy ? 'Entrando…' : 'Entrar'}</button>
         <div className="login-divider"><span>ou</span></div>
         {config?.googleClientId
           ? <GoogleButton clientId={config.googleClientId} onCredential={googleCredential} onError={setError}/>

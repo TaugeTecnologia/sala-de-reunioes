@@ -35,6 +35,7 @@ export function createAuth({
   usersFile,
   secret = randomBytes(32).toString('hex'),
   ttlMs = SESSION_TTL_MS,
+  crossSite = false,
   fetchImpl = globalThis.fetch,
   now = Date.now,
 } = {}) {
@@ -63,7 +64,9 @@ export function createAuth({
     } catch { return null; }
   }
 
-  const cookieHeader = (token, maxAge) => `${COOKIE_NAME}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}`;
+  // Front em outro domínio (GitHub Pages): o cookie precisa ser SameSite=None e Secure (HTTPS).
+  const attributes = crossSite ? 'HttpOnly; Secure; SameSite=None; Path=/' : 'HttpOnly; SameSite=Strict; Path=/';
+  const cookieHeader = (token, maxAge) => `${COOKIE_NAME}=${token}; ${attributes}; Max-Age=${maxAge}`;
 
   function checkLock(key) {
     const entry = failures.get(key);
@@ -92,7 +95,7 @@ export function createAuth({
     publicConfig: () => ({ dominio: domain, googleClientId: googleClientId || null }),
     getSession: readSession,
     cookieHeader,
-    clearCookie: () => `${COOKIE_NAME}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0`,
+    clearCookie: () => `${COOKIE_NAME}=; ${attributes}; Max-Age=0`,
 
     async login(emailValue, password, ip = '') {
       const email = normalizeEmail(emailValue);

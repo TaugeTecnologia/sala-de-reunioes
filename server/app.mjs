@@ -268,10 +268,12 @@ async function handleAuth(auth, request, response, url) {
   }
 }
 
-export function createApp({ auth = null, exportDir = EXPORT_DIR, distDir = path.join(PROJECT_DIR, 'dist'), syncController, load = (year, month) => loadAgenda(year, exportDir, month), realtimeOptions = {} } = {}) {
+export function createApp({ auth = null, allowedOrigins = [], allowedHosts = [], exportDir = EXPORT_DIR, distDir = path.join(PROJECT_DIR, 'dist'), syncController, load = (year, month) => loadAgenda(year, exportDir, month), realtimeOptions = {} } = {}) {
   const sync = syncController || createSyncController({ load });
   const realtime = createRealtimeMonitor({ sync, load, ...realtimeOptions });
   const streams = new Set();
+  const trustedOrigins = new Set(allowedOrigins.map((origin) => origin.replace(/\/$/, '')));
+  const trustedHosts = new Set(allowedHosts.map((host) => host.toLowerCase()));
   const stop = () => {
     realtime.stop();
     for (const response of streams) response.end();
@@ -280,10 +282,26 @@ export function createApp({ auth = null, exportDir = EXPORT_DIR, distDir = path.
   };
   const server = createServer({ requestTimeout: 10_000, headersTimeout: 10_000 }, async (request, response) => {
     try {
-      if (!/^(?:127\.0\.0\.1|localhost)(?::\d+)?$/.test(request.headers.host || '')) throw new HttpError(403, 'O painel aceita apenas acesso local.');
+      const host = (request.headers.host || '').toLowerCase();
+      if (!/^(?:127\.0\.0\.1|localhost)(?::\d+)?$/.test(host) && !trustedHosts.has(host.replace(/:\d+$/, ''))) throw new HttpError(403, 'Endereço de acesso não autorizado.');
       const rawPath = (request.url || '/').split('?')[0];
       const url = new URL(request.url, 'http://127.0.0.1');
-      if (url.pathname.startsWith('/api/') && (request.headers['sec-fetch-site'] === 'cross-site' || (request.headers.origin && !LOCAL_ORIGINS.has(request.headers.origin) && request.headers.origin !== `http://${request.headers.host}`))) throw new HttpError(403, 'Origem não autorizada para acessar os dados locais.');
+      if (url.pathname.startsWith('/api/')) {
+        const origin = request.headers.origin;
+        const trusted = Boolean(origin) && trustedOrigins.has(origin);
+        const sameOrigin = !origin || LOCAL_ORIGINS.has(origin) || origin === `http://${request.headers.host}` || origin === `https://${request.headers.host}`;
+        if (!trusted && (!sameOrigin || request.headers['sec-fetch-site'] === 'cross-site')) throw new HttpError(403, 'Origem não autorizada para acessar os dados.');
+        if (trusted) {
+          response.setHeader('Access-Control-Allow-Origin', origin);
+          response.setHeader('Access-Control-Allow-Credentials', 'true');
+          response.setHeader('Vary', 'Origin');
+          if (request.method === 'OPTIONS') {
+            response.writeHead(204, { 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Max-Age': '600' });
+            response.end();
+            return;
+          }
+        }
+      }
       if (url.pathname.startsWith('/api/auth/')) {
         await handleAuth(auth, request, response, url);
         return;
