@@ -7,16 +7,14 @@ Interface para acompanhar as reuniões da sala. Usa os dados reais do coletor Py
 
 Na raiz do repositório, execute:
 
-```powershell
-npm.cmd install
-npm.cmd run dev
+```bash
+npm install
+npm run dev
 ```
 
 Acesse **http://127.0.0.1:5175**. O comando inicia a interface e o serviço de dados
 em conjunto. Para encerrar, pressione `Ctrl+C` no terminal. Requer Node.js 22.12+
-e as dependências Python do coletor já instalado na pasta vizinha.
-
-As dependências já foram preparadas nesta máquina; basta `npm.cmd run dev`.
+e as dependências Python do coletor (`pip install -r coletor/requirements.txt`).
 
 ## O que aparece
 
@@ -143,7 +141,7 @@ disponíveis para uso manual do script.
 A atualização automática usa o token existente. Se precisar renovar a autorização,
 faça isso no terminal, na pasta do coletor:
 
-```powershell
+```bash
 python .\trazer-agenda-de-setembro.py --autorizar --ano 2026
 ```
 
@@ -154,9 +152,9 @@ O servidor escuta exclusivamente em `127.0.0.1`; esta versão é de uso local.
 O Python desta máquina é encontrado automaticamente. Em outra instalação, pode
 informar seu executável antes de iniciar o painel:
 
-```powershell
-$env:PYTHON_EXECUTABLE = 'C:\caminho\python.exe'
-npm.cmd run dev
+```bash
+export PYTHON_EXECUTABLE=/caminho/para/python
+npm run dev
 ```
 
 ## Significado dos indicadores
@@ -215,7 +213,7 @@ aparecem como não informados; os avisos de acesso limitado permanecem visíveis
 ├── server/index.mjs        Inicialização do servidor
 ├── scripts/dev.mjs         Execução conjunta da interface e API
 ├── vite.config.js          Interface em 5175 e proxy da API em 8787
-└── public/favicon.svg
+└── public/brand, fonts     Logotipos e tipografia Tauge
 ```
 
 Rotas da API: `GET /api/agenda?ano=2027&mes=1`, `GET /api/eventos?ano=2027&mes=1` (SSE),
@@ -226,15 +224,15 @@ por vez e limita sua duração a três minutos. Os testes usam processos simulad
 
 ## Validar e executar o build
 
-```powershell
-npm.cmd test
-npm.cmd run build
+```bash
+npm test
+npm run build
 ```
 
 Para usar o build, encerre o comando de desenvolvimento e execute:
 
-```powershell
-npm.cmd start
+```bash
+npm start
 ```
 
 Nesse modo, interface e API ficam juntas em **http://127.0.0.1:8787**.

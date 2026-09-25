@@ -1,6 +1,5 @@
 import { createServer } from 'node:http';
 import { readFile, readdir, stat, realpath } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
@@ -10,7 +9,6 @@ import { periodAt, monthPeriod } from '../src/lib/periods.js';
 const PROJECT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const COLLECTOR_DIR = path.resolve(PROJECT_DIR, 'coletor');
 export const EXPORT_DIR = path.join(COLLECTOR_DIR, 'exportacoes');
-const KNOWN_PYTHON = 'C:/Users/Administrador/AppData/Local/Python/pythoncore-3.14-64/python.exe';
 const LOCAL_ORIGINS = new Set(['http://127.0.0.1:8787', 'http://localhost:8787', 'http://127.0.0.1:5175', 'http://localhost:5175']);
 const EVENT_FIELDS = ['chave', 'ical_uid', 'id_evento', 'nome', 'data', 'inicio', 'fim', 'inicio_legivel', 'fim_legivel', 'dia_inteiro', 'fim_exclusivo', 'duracao_minutos', 'criador', 'organizador', 'local', 'salas', 'participantes', 'descricao', 'tem_conferencia_online', 'modalidade', 'classificacao', 'motivo', 'bloqueio_confirmado', 'agenda_copia_utilizada', 'copias_encontradas', 'agendas_origem', 'avisos'];
 
@@ -91,7 +89,7 @@ export async function loadAgenda(year = periodAt().ano, exportDir = EXPORT_DIR, 
   return serializeReport(selected.report, selected.name, warnings);
 }
 
-export function createSyncController({ spawnProcess = spawn, load = (year, month) => loadAgenda(year, EXPORT_DIR, month), timeoutMs = 180_000, collectorDir = COLLECTOR_DIR, python = process.env.PYTHON_EXECUTABLE || (existsSync(KNOWN_PYTHON) ? KNOWN_PYTHON : 'python') } = {}) {
+export function createSyncController({ spawnProcess = spawn, load = (year, month) => loadAgenda(year, EXPORT_DIR, month), timeoutMs = 180_000, collectorDir = COLLECTOR_DIR, python = process.env.PYTHON_EXECUTABLE || (process.platform === 'win32' ? 'python' : 'python3') } = {}) {
   const states = new Map();
   const listeners = new Set();
   const queue = [];
