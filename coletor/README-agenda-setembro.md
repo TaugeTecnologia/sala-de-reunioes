@@ -121,7 +121,7 @@ As exportações antigas permanecem com seu conteúdo original.
 
 ## Atualização automática do painel
 
-O site `painel-salas` executa o coletor com `--painel` a cada 15 segundos entre
+O painel (raiz do repositório) executa o coletor com `--painel` a cada 15 segundos entre
 consultas enquanto houver uma aba conectada. Você também pode testar uma coleta
 única nesse formato:
 

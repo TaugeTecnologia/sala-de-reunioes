@@ -1,15 +1,13 @@
 # Painel de salas — Tauge
 
-Uma nova interface para acompanhar as reuniões da sala, inspirada no visual de
-`reserva-salas`. O projeto anterior permanece independente. Este painel usa os dados
-reais do coletor Python e oferece somente consulta e atualização dos dados.
+Interface para acompanhar as reuniões da sala. Usa os dados reais do coletor Python
+(pasta [`coletor/`](coletor/)) e oferece somente consulta e atualização dos dados.
 
 ## Abrir o painel
 
-Na raiz `teste`, execute:
+Na raiz do repositório, execute:
 
 ```powershell
-cd .\painel-salas
 npm.cmd install
 npm.cmd run dev
 ```
@@ -107,7 +105,7 @@ Horários são apresentados em UTC-03:00, independentemente do fuso do navegador
 
 O serviço consulta o Google automaticamente enquanto houver uma aba do painel
 conectada, usando o coletor Python existente. Ele também lê a exportação mais recente de
-`../recuperando-dados-sala-de-reunião/exportacoes`, com o formato
+`coletor/exportacoes`, com o formato
 `eventos_das_salas_v2`, proveniente da consulta direta à agenda da sala.
 Arquivos de coletas interrompidas ou exportações antigas de todos os funcionários
 não são apresentados. Se a última tentativa falhar, preserva os dados acessíveis
@@ -205,7 +203,8 @@ aparecem como não informados; os avisos de acesso limitado permanecem visíveis
 ## Estrutura
 
 ```text
-painel-salas/
+.
+├── coletor/                Coletor Python da agenda (ver coletor/README-agenda-setembro.md)
 ├── src/App.jsx             Telas, navegação e detalhes das reuniões
 ├── src/styles.css          Visual responsivo
 ├── src/lib/agenda.js       Datas, filtros, calendário e métricas

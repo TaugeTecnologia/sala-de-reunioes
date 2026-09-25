@@ -8,7 +8,7 @@ import { createRealtimeMonitor } from './realtime.mjs';
 import { periodAt, monthPeriod } from '../src/lib/periods.js';
 
 const PROJECT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-export const COLLECTOR_DIR = path.resolve(PROJECT_DIR, '../recuperando-dados-sala-de-reunião');
+export const COLLECTOR_DIR = path.resolve(PROJECT_DIR, 'coletor');
 export const EXPORT_DIR = path.join(COLLECTOR_DIR, 'exportacoes');
 const KNOWN_PYTHON = 'C:/Users/Administrador/AppData/Local/Python/pythoncore-3.14-64/python.exe';
 const LOCAL_ORIGINS = new Set(['http://127.0.0.1:8787', 'http://localhost:8787', 'http://127.0.0.1:5175', 'http://localhost:5175']);
