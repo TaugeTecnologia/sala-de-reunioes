@@ -1,7 +1,7 @@
-﻿# Trazer agenda de setembro da sala de reunião
+﻿# Trazer agenda mensal da sala de reunião
 
 O script consulta diretamente a agenda da sala **TAUGE CENTRAL-9-Sala de reuniões (8)**,
-no período de setembro de 2026, em UTC-03:00. Não lista usuários da organização nem
+no mês e ano informados, em UTC-03:00. Sem parâmetros, usa o mês e ano atuais. Não lista usuários da organização nem
 consulta agendas pessoais. Todas as chamadas ao Google são somente de leitura.
 
 ## Executar
@@ -10,7 +10,7 @@ Na pasta do script:
 
 ```powershell
 python -m pip install -r requirements.txt
-python .\trazer-agenda-de-setembro.py --ano 2026
+python .\trazer-agenda-de-setembro.py --ano 2027 --mes 1
 ```
 
 A sala padrão já está configurada em `SALA_PADRAO`, com o ID identificado no Calendar:
@@ -22,7 +22,7 @@ c_1889c407qaa76h6vjchtl29n5u27e@resource.calendar.google.com
 Para consultar outra sala, informe o e-mail/ID de sua agenda; pode repetir `--sala`:
 
 ```powershell
-python .\trazer-agenda-de-setembro.py --ano 2026 --sala "email-da-sala@resource.calendar.google.com"
+python .\trazer-agenda-de-setembro.py --ano 2027 --mes 1 --sala "email-da-sala@resource.calendar.google.com"
 ```
 
 O nome completo da sala padrão e os nomes "sala de reunião"/"sala de reuniões"
@@ -46,7 +46,7 @@ https://www.googleapis.com/auth/calendar.events.readonly
 Quando precisar autorizar novamente:
 
 ```powershell
-python .\trazer-agenda-de-setembro.py --autorizar --ano 2026
+python .\trazer-agenda-de-setembro.py --autorizar --ano 2027 --mes 1
 ```
 
 O script encontra `client_secret*.json`, abre o login e salva o token. Se houver
@@ -57,7 +57,7 @@ Renovações de tokens expirados não acrescentam permissões.
 Para service account com delegação de domínio:
 
 ```powershell
-python .\trazer-agenda-de-setembro.py --ano 2026 --conta-servico .\conta-servico.json --admin gestor@suaempresa.com
+python .\trazer-agenda-de-setembro.py --ano 2027 --mes 1 --conta-servico .\conta-servico.json --admin gestor@suaempresa.com
 ```
 
 O cliente da service account precisa ter o escopo Calendar autorizado na delegação
@@ -69,8 +69,8 @@ nem tenta autenticar como o recurso. O JSON OAuth não é uma chave de service a
 
 Cada execução gera, em `exportacoes` (ou na pasta informada em `--saida`):
 
-- `agenda-setembro-2026-<data-hora>.json`: dados dos eventos selecionados e análise.
-- `agenda-setembro-2026-<data-hora>-salas.md`: relatório legível dos eventos da sala.
+- `agenda-AAAA-MM-<data-hora>.json`: dados dos eventos selecionados e análise.
+- `agenda-AAAA-MM-<data-hora>-salas.md`: relatório legível dos eventos da sala.
 
 O terminal e o Markdown mostram nome, data, início/fim, criador, organizador,
 participantes, respostas e situação da reserva. O Markdown inclui descrição/pauta.
@@ -126,10 +126,10 @@ consultas enquanto houver uma aba conectada. Você também pode testar uma colet
 única nesse formato:
 
 ```powershell
-python .\trazer-agenda-de-setembro.py --ano 2026 --painel
+python .\trazer-agenda-de-setembro.py --ano 2027 --mes 1 --painel
 ```
 
-Esse modo atualiza somente `exportacoes/agenda-setembro-2026-atual.json`, no mesmo
+Esse modo atualiza somente `exportacoes/agenda-AAAA-MM-atual.json`, no mesmo
 formato `eventos_das_salas_v2`, sem gerar Markdown ou arquivos datados. O arquivo
 só é substituído atomicamente depois da coleta concluída. Qualquer erro em sala
 ou página mantém o snapshot anterior. Uma coleta válida sem eventos substitui a
@@ -137,7 +137,7 @@ anterior, refletindo remoções e cancelamentos. Acesso limitado continua com av
 e código 2; falha na coleta retorna 1. Não combine `--painel` com `--reprocessar`.
 
 O painel recebe os resultados automaticamente; não é necessário executar o script
-à mão ou recarregar a página. O período continua sendo setembro do ano selecionado.
+à mão ou recarregar a página. O período acompanha o mês e ano selecionados no painel.
 
 ## Reprocessar um arquivo existente
 
@@ -166,3 +166,14 @@ Os testes não leem credenciais nem chamam APIs reais.
 - [Calendar: listar eventos](https://developers.google.com/workspace/calendar/api/v3/reference/events/list)
 - [Campos dos eventos, recorrências e convidados](https://developers.google.com/workspace/calendar/api/v3/reference/events)
 - [Delegação de domínio](https://developers.google.com/identity/protocols/oauth2/service-account)
+
+## Outros meses e anos
+
+O nome do script foi preservado para manter os comandos existentes. Use `--mes` de 1 a 12 e `--ano` de 1 a 9998. Exemplos:
+
+```powershell
+python .\trazer-agenda-de-setembro.py --ano 2027 --mes 12
+python .\trazer-agenda-de-setembro.py --ano 2028 --mes 2
+```
+
+Dezembro termina em 1º de janeiro do ano seguinte; fevereiro respeita anos bissextos. Cada consulta gera arquivos separados `agenda-AAAA-MM-<identificador>.json` ou, com `--painel`, `agenda-AAAA-MM-atual.json`. A autorização e os IDs das salas permanecem os mesmos.

@@ -9,9 +9,9 @@ class FakeEventSource extends EventTarget {
   send(type, value) { this.dispatchEvent(new MessageEvent(type, { data: typeof value === 'string' ? value : JSON.stringify(value) })); }
 }
 
-function connect(year = 2026) {
+function connect(year = 2026, month = 9) {
   const received = { agendas: [], states: [], connections: [] };
-  const stop = connectAgenda({ year, onAgenda: value => received.agendas.push(value), onState: value => received.states.push(value),
+  const stop = connectAgenda({ year, month, onAgenda: value => received.agendas.push(value), onState: value => received.states.push(value),
     onConnection: value => received.connections.push(value), EventSourceClass: FakeEventSource });
   return { ...received, stop, stream: FakeEventSource.last };
 }
@@ -30,7 +30,7 @@ test('cache antigo de reconexão e GET atrasado não restauram eventos já remov
 
 test('recebe criação, alteração e remoção de eventos sem recarregar a página', () => {
   const client = connect();
-  assert.equal(client.stream.url, '/api/eventos?ano=2026');
+  assert.equal(client.stream.url, '/api/eventos?ano=2026&mes=9');
   client.stream.send('open', '');
   client.stream.send('agenda', agenda([{ nome: 'Original', inicio: '2026-09-22T09:00:00-03:00' }]));
   client.stream.send('agenda', agenda([{ nome: 'Alterado', inicio: '2026-09-22T10:00:00-03:00' }]));
@@ -45,7 +45,7 @@ test('falha de conexão e consulta não apagam os últimos dados recebidos', () 
   const client = connect();
   client.stream.send('agenda', agenda([{ nome: 'Preservado' }]));
   client.stream.send('error', '');
-  client.stream.send('estado', { ano: 2026, estado: 'erro', mensagem: 'Aguardando nova tentativa.' });
+  client.stream.send('estado', { ano: 2026, mes: 9, estado: 'erro', mensagem: 'Aguardando nova tentativa.' });
   assert.equal(client.agendas.length, 1);
   assert.equal(client.agendas[0].eventos[0].nome, 'Preservado');
   assert.equal(client.connections.at(-1), 'reconectando');
@@ -66,7 +66,7 @@ test('troca de ano fecha conexão antiga e ignora mensagens atrasadas ou malform
   current.stream.send('agenda', '{invalid');
   current.stream.send('agenda', agenda([], 2026));
   current.stream.send('agenda', { periodo: { ano: 2027 } });
-  current.stream.send('estado', { ano: 2026, estado: 'concluido' });
+  current.stream.send('estado', { ano: 2026, mes: 9, estado: 'concluido' });
   current.stream.send('agenda', agenda([], 2027));
   assert.equal(current.agendas.length, 1);
   assert.equal(current.states.length, 0);
@@ -83,4 +83,20 @@ test('identifica conexão e frequência sem anunciar atualização instantânea'
   const stop = connectAgenda({ year: 2026, EventSourceClass: null, onConnection: value => connections.push(value) });
   assert.deepEqual(connections, ['conectando', 'indisponivel']);
   stop();
+});
+
+test('troca de mês no mesmo ano isola eventos e estados e fecha a conexão anterior', () => {
+  const september = connect(2027, 9);
+  september.stop();
+  const october = connect(2027, 10);
+  assert.equal(october.stream.url, '/api/eventos?ano=2027&mes=10');
+  october.stream.send('agenda', agenda([], 2027));
+  october.stream.send('estado', { ano: 2027, mes: 9, estado: 'erro' });
+  assert.equal(october.agendas.length, 0);
+  assert.equal(october.states.length, 0);
+  october.stream.send('agenda', { ...agenda([], 2027), periodo: { ano: 2027, mes: 10 } });
+  october.stream.send('estado', { ano: 2027, mes: 10, estado: 'concluido' });
+  assert.equal(october.agendas.length, 1);
+  assert.equal(october.states.length, 1);
+  october.stop();
 });

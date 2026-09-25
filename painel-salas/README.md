@@ -42,7 +42,7 @@ As dependências já foram preparadas nesta máquina; basta `npm.cmd run dev`.
   Sem filtros, os botões percorrem semanas consecutivas. Com filtros ativos,
   passam a percorrer somente semanas com resultados, preservando os filtros.
   Dias fora do período coletado ficam em branco, sem aviso ou fundo listrado.
-  Navegar para outros meses não amplia o período da coleta, que continua limitado a setembro.
+  Navegar para outros meses ou anos carrega automaticamente os meses da semana exibida. Uma data exata consulta seu próprio mês.
 - **Agenda:** busca por nome da reunião, criador, organizador ou convidado
   (incluindo e-mail), sem distinguir acentos ou maiúsculas. Os termos podem ser
   combinados com data e sala. A busca leva à semana de um resultado e destaca seu
@@ -100,8 +100,7 @@ As dependências já foram preparadas nesta máquina; basta `npm.cmd run dev`.
 Não há aba, botão ou formulário de criação de reservas. A ilustração da sala é
 decorativa; não representa uma planta real nem informa capacidade.
 
-O período atual é **setembro**, conforme o coletor existente. O seletor de ano
-permite consultar outras exportações de setembro ou executar uma nova coleta.
+A integração aceita **todos os meses e anos**, inclusive futuros. Use os botões de semana ou digite uma data em **DD/MM/AAAA** para acessar o período desejado. A coleta é mensal, sob demanda; não tenta expandir recorrências por infinitos anos. A Visão geral acompanha o mês atual e o seguinte e muda automaticamente na virada do mês/ano. A próxima reunião é procurada nesse intervalo; a Agenda permite consultar datas mais distantes.
 Horários são apresentados em UTC-03:00, independentemente do fuso do navegador.
 
 ## Integração dos dados
@@ -114,7 +113,7 @@ Arquivos de coletas interrompidas ou exportações antigas de todos os funcioná
 não são apresentados. Se a última tentativa falhar, preserva os dados acessíveis
 da coleta anterior e informa essa condição.
 
-- Ao abrir o painel, inicia o acompanhamento do ano selecionado. O servidor
+- Ao abrir o painel, inicia o acompanhamento dos meses selecionados. O servidor
   consulta a agenda da sala em intervalos de **2 segundos entre consultas**,
   mais o tempo necessário para a resposta do Google.
 - Cada nova coleta é enviada ao navegador por **Server-Sent Events (SSE)**.
@@ -123,7 +122,7 @@ da coleta anterior e informa essa condição.
 - O primeiro cartão compara o relógio com os eventos **a cada segundo**, sem
   depender de outra consulta para mudar no início ou fim de uma reserva conhecida.
 - Várias abas compartilham a coleta; há somente um processo Python por vez.
-  Anos diferentes são atendidos em fila. Ao fechar todas as abas, não são
+  Meses e anos diferentes são atendidos em fila, com estados e arquivos separados. Ao fechar todas as abas, não são
   agendadas novas consultas automáticas.
 - A conexão se restabelece automaticamente após quedas. Uma falha não apaga a
   última agenda recebida; o aviso permanece visível até a recuperação. As
@@ -134,12 +133,11 @@ de entrega instantânea**. Notificações push do Google exigem um receptor HTTP
 acessível pelo serviço, que não existe no endereço local `127.0.0.1`.
 [Requisitos oficiais das notificações](https://developers.google.com/workspace/calendar/api/guides/push).
 
-Os eventos precisam estar vinculados à agenda da sala e dentro de **setembro do
-ano selecionado**. Criar uma reunião somente na agenda pessoal, sem incluir a
+Os eventos precisam estar vinculados à agenda da sala e dentro do **período consultado**. Criar uma reunião somente na agenda pessoal, sem incluir a
 sala, não faz esse evento aparecer no painel.
 
 O coletor automático usa `--painel` e atualiza somente
-`exportacoes/agenda-setembro-<ano>-atual.json`, publicado atomicamente ao concluir
+`exportacoes/agenda-AAAA-MM-atual.json`, publicado atomicamente ao concluir
 a consulta. Não gera um novo par JSON/Markdown a cada atualização. Se alguma sala
 ou página falhar, mantém o arquivo anterior. As exportações convencionais continuam
 disponíveis para uso manual do script.
@@ -186,12 +184,11 @@ O cartão usa a hora do computador e é recalculado a cada segundo enquanto a ab
 está ativa; ao voltar a uma aba suspensa, confere imediatamente o relógio novamente.
 O indicador descreve a agenda, não detecta presença física. Se a conexão cair, a
 consulta falhar, o snapshot tiver 30 segundos ou mais, ou o horário atual estiver
-fora de setembro do ano consultado, exibe `—` com o motivo em vez de afirmar que
+fora do período consultado, exibe `—` com o motivo em vez de afirmar que
 a sala está livre. A lista de reuniões permanece disponível.
 
 Criações/edições no Google entram após a próxima coleta: **2 segundos de espera
-mais o tempo de resposta do Google e do coletor**. O código Python permanece
-inalterado. A consulta é compartilhada entre abas e não abre processos simultâneos.
+mais o tempo de resposta do Google e do coletor**. O coletor recebe `--ano` e `--mes`. A consulta é compartilhada entre abas e não abre processos simultâneos.
 Falhas continuam usando intervalos de 30, 60 e até 120 segundos antes de tentar
 novamente, preservando os limites da API.
 
@@ -215,15 +212,15 @@ painel-salas/
 ├── src/lib/live.js         Conexão automática e reconexão da tela
 ├── src/lib/clock.js        Relógio por segundo e retomada da aba
 ├── server/app.mjs          API local, exportações e sincronização
-├── server/realtime.mjs     Acompanhamento dos anos conectados e intervalos
+├── server/realtime.mjs     Acompanhamento dos meses conectados e intervalos
 ├── server/index.mjs        Inicialização do servidor
 ├── scripts/dev.mjs         Execução conjunta da interface e API
 ├── vite.config.js          Interface em 5175 e proxy da API em 8787
 └── public/favicon.svg
 ```
 
-Rotas da API: `GET /api/agenda?ano=2026`, `GET /api/eventos?ano=2026` (SSE),
-`POST /api/sincronizar` com `{"ano":2026}` e `GET /api/sincronizacao`.
+Rotas da API: `GET /api/agenda?ano=2027&mes=1`, `GET /api/eventos?ano=2027&mes=1` (SSE),
+`POST /api/sincronizar` com `{"ano":2027,"mes":1}` e `GET /api/sincronizacao?ano=2027&mes=1`. Quando omitidos, ano e mês usam a data atual em UTC-03.
 O fluxo SSE envia `agenda` com os dados e `estado` com a situação da consulta,
 intervalo e horários da última/próxima tentativa. A sincronização aceita um processo
 por vez e limita sua duração a três minutos. Os testes usam processos simulados.
@@ -242,3 +239,5 @@ npm.cmd start
 ```
 
 Nesse modo, interface e API ficam juntas em **http://127.0.0.1:8787**.
+
+As exportações antigas de setembro continuam legíveis. Reuniões entre meses são combinadas pela chave da ocorrência, mantendo uma única reunião e a versão mais recente. Consultas usam limites mensais e fim exclusivo, conforme a [documentação de events.list](https://developers.google.com/workspace/calendar/api/v3/reference/events/list).

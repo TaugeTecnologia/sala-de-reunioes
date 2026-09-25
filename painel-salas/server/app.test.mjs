@@ -60,7 +60,7 @@ test('seleciona última coleta concluída acessível e ignora coleta interrompid
   await writeReport(directory, '20260922T210000000000', report({ gerado_em: '2026-09-22T21:00:00Z', origem_coleta: 'todos_os_usuarios' }));
   await writeFile(path.join(directory, 'agenda-setembro-2026-20260922T220000000000Z.json'), '{interrompido');
   await writeFile(path.join(directory, 'token-agenda-setembro.json'), JSON.stringify(report({ gerado_em: '2027-01-01T00:00:00Z' })));
-  const agenda = await loadAgenda(2026, directory);
+  const agenda = await loadAgenda(2026, directory, 9);
   assert.equal(agenda.arquivo, selected);
   assert.equal(agenda.eventos.length, 1);
 });
@@ -69,7 +69,7 @@ test('preserva coleta anterior quando a mais recente tem erro em todas as salas'
   const directory = await fixture(t);
   const selected = await writeReport(directory, '20260922T190000000000', report());
   await writeReport(directory, '20260922T200000000000', report({ gerado_em: '2026-09-22T20:00:00Z', agendas: [{ nome: 'Sala', status: 'erro', erro: 'Google indisponível.' }] }));
-  const agenda = await loadAgenda(2026, directory);
+  const agenda = await loadAgenda(2026, directory, 9);
   assert.equal(agenda.arquivo, selected);
   assert.ok(agenda.avisos.some((warning) => warning.includes('coleta mais recente')));
 });
@@ -77,14 +77,14 @@ test('preserva coleta anterior quando a mais recente tem erro em todas as salas'
 test('retorna 404 claro se não há exportação concluída para o ano solicitado', async (t) => {
   const directory = await fixture(t);
   await writeReport(directory, '20260922T190000000000', report());
-  await assert.rejects(loadAgenda(2027, directory), { status: 404 });
-  await assert.rejects(loadAgenda(2026, path.join(directory, 'ausente')), { status: 404 });
+  await assert.rejects(loadAgenda(2027, directory, 9), { status: 404 });
+  await assert.rejects(loadAgenda(2026, path.join(directory, 'ausente'), 9), { status: 404 });
 });
 
 test('permite uma sala vazia e mantém aviso se a única coleta contém erro', async (t) => {
   const directory = await fixture(t);
   await writeReport(directory, '20260922T190000000000', report({ gestao_sala: { eventos_na_sala: [] }, agendas: [{ status: 'erro', erro: 'Acesso recusado.' }] }));
-  const agenda = await loadAgenda(2026, directory);
+  const agenda = await loadAgenda(2026, directory, 9);
   assert.equal(agenda.eventos.length, 0);
   assert.ok(agenda.avisos.includes('Acesso recusado.'));
 });
@@ -94,7 +94,7 @@ test('snapshot atual mais recente substitui o arquivo antigo mesmo quando a últ
   await writeReport(directory, '20260922T190000000000', report());
   await writeFile(path.join(directory, 'agenda-setembro-2026-atual.json'), JSON.stringify(report({ gerado_em: '2026-09-22T20:00:00Z', gestao_sala: { eventos_na_sala: [] }, emails_vinculados: [] })));
   await writeFile(path.join(directory, 'agenda-setembro-2026-atual.json.tmp'), JSON.stringify(report({ gerado_em: '2026-09-22T21:00:00Z' })));
-  const result = await loadAgenda(2026, directory);
+  const result = await loadAgenda(2026, directory, 9);
   assert.equal(result.arquivo, 'agenda-setembro-2026-atual.json');
   assert.deepEqual(result.eventos, []);
   assert.deepEqual(result.emailsVinculados, []);
@@ -116,8 +116,8 @@ test('sincroniza com comando fixo sem shell e aceita exit 2 com coleta acessíve
     python: 'python-seguro', collectorDir: 'C:/coletor', spawnProcess: (...args) => { spawned = args; return child; },
     load: async () => ({ geradoEm: new Date().toISOString(), salas: [{ status: 'acesso_limitado' }] }),
   });
-  assert.equal(controller.start(2026).estado, 'executando');
-  assert.equal(controller.start(2026).estado, 'executando');
+  assert.equal(controller.start(2026, { month: 9 }).estado, 'executando');
+  assert.equal(controller.start(2026, { month: 9 }).estado, 'executando');
   assert.equal(spawned[0], 'python-seguro');
   assert.deepEqual(spawned[1].slice(-2), ['--ano', '2026']);
   assert.ok(spawned[1].includes('--painel'));
@@ -134,7 +134,7 @@ test('sincroniza com comando fixo sem shell e aceita exit 2 com coleta acessíve
 test('exit 2 não é anunciado como sucesso se só restaram dados anteriores', async () => {
   const child = fakeProcess();
   const controller = createSyncController({ spawnProcess: () => child, load: async () => ({ geradoEm: '2020-01-01T00:00:00Z', salas: [{ status: 'acesso_limitado' }] }) });
-  controller.start(2026);
+  controller.start(2026, { month: 9 });
   child.emit('close', 2);
   await tick();
   assert.equal(controller.getState().estado, 'erro');
@@ -144,7 +144,7 @@ test('exit 2 não é anunciado como sucesso se só restaram dados anteriores', a
 test('falhas do coletor não expõem stdout, stderr nem detalhes de autenticação', () => {
   const child = fakeProcess();
   const controller = createSyncController({ spawnProcess: () => child });
-  controller.start(2026);
+  controller.start(2026, { month: 9 });
   child.emit('error', new Error('token=secret/path/to/credential'));
   assert.equal(controller.getState().estado, 'erro');
   assert.doesNotMatch(JSON.stringify(controller.getState()), /secret|credential/);
@@ -154,7 +154,7 @@ test('falhas do coletor não expõem stdout, stderr nem detalhes de autenticaç�
 test('tempo limite encerra processo e permite uma nova tentativa', async () => {
   const child = fakeProcess();
   const controller = createSyncController({ spawnProcess: () => child, timeoutMs: 10 });
-  controller.start(2026);
+  controller.start(2026, { month: 9 });
   await new Promise((resolve) => setTimeout(resolve, 30));
   assert.equal(controller.getState().estado, 'erro');
   assert.equal(child.killed, true);
@@ -167,19 +167,19 @@ test('pedidos manuais e automáticos se agrupam por ano e mantêm uma única exe
     spawnProcess: (...args) => { const child = fakeProcess(); spawned.push({ child, args }); return child; },
     load: async () => ({ geradoEm: new Date().toISOString(), salas: [{ status: 'ok' }] }),
   });
-  controller.start(2026, { automatic: true });
-  controller.start(2026);
-  controller.start(2027, { automatic: true });
-  controller.start(2027);
-  controller.start(2028, { automatic: true });
-  controller.cancelAutomatic(2027); // A manual request keeps its place in the queue.
-  controller.cancelAutomatic(2028); // A disconnected automatic-only request is dropped.
+  controller.start(2026, { automatic: true, month: 9 });
+  controller.start(2026, { month: 9 });
+  controller.start(2027, { automatic: true, month: 9 });
+  controller.start(2027, { month: 9 });
+  controller.start(2028, { automatic: true, month: 9 });
+  controller.cancelAutomatic(2027, 9); // A manual request keeps its place in the queue.
+  controller.cancelAutomatic(2028, 9); // A disconnected automatic-only request is dropped.
   assert.equal(spawned.length, 1);
   spawned[0].child.emit('close', 0);
   await tick();
   assert.equal(spawned.length, 2);
   assert.equal(spawned[1].args[1].at(-1), '2027');
-  controller.start(2026, { automatic: true });
+  controller.start(2026, { automatic: true, month: 9 });
   assert.equal(spawned.length, 2);
   spawned[1].child.emit('close', 0);
   await tick();
@@ -194,9 +194,9 @@ test('pedidos manuais e automáticos se agrupam por ano e mantêm uma única exe
 test('timeout não libera o bloqueio antes do encerramento real do processo', async () => {
   const children = [];
   const controller = createSyncController({ timeoutMs: 10, spawnProcess: () => { const child = fakeProcess(); children.push(child); return child; } });
-  controller.start(2026);
+  controller.start(2026, { month: 9 });
   await new Promise((resolve) => setTimeout(resolve, 25));
-  controller.start(2027);
+  controller.start(2027, { month: 9 });
   assert.equal(children.length, 1);
   assert.equal(children[0].killed, true);
   children[0].emit('close', 1);
@@ -208,7 +208,7 @@ test('exit 2 com falha em uma das salas preserva o erro e não publica agenda pa
   const child = fakeProcess(), events = [];
   const controller = createSyncController({ spawnProcess: () => child, load: async () => ({ geradoEm: new Date().toISOString(), salas: [{ status: 'acesso_limitado' }, { status: 'erro' }] }) });
   controller.subscribe((event) => events.push(event));
-  controller.start(2026);
+  controller.start(2026, { month: 9 });
   child.emit('close', 2);
   await tick();
   assert.equal(controller.getState().estado, 'erro');
@@ -241,7 +241,7 @@ function call(port, pathname, { method = 'GET', headers = {}, body } = {}) {
 
 test('API entrega JSON, valida ano e não oferece CORS público', async (t) => {
   const port = await withServer(t, { load: async (year) => serializeReport(report({ ano: year }), 'exportacao.json') });
-  const good = await call(port, '/api/agenda?ano=2026');
+  const good = await call(port, '/api/agenda?ano=2026&mes=9');
   assert.equal(good.status, 200);
   assert.equal(JSON.parse(good.text).periodo.ano, 2026);
   assert.equal(good.headers['access-control-allow-origin'], undefined);
@@ -254,7 +254,7 @@ test('POST bloqueia origem externa e exige JSON pequeno com ano', async (t) => {
   let started = 0;
   const syncController = { start: () => { started += 1; return { estado: 'executando' }; }, getState: () => ({ estado: 'ocioso' }), stop() {} };
   const port = await withServer(t, { syncController });
-  const valid = { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'http://127.0.0.1:5175' }, body: '{"ano":2026}' };
+  const valid = { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'http://127.0.0.1:5175' }, body: '{"ano":2026,"mes":9}' };
   assert.equal((await call(port, '/api/sincronizar', { ...valid, headers: { ...valid.headers, Origin: 'https://externo.example' } })).status, 403);
   assert.equal((await call(port, '/api/sincronizar', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: valid.body })).status, 415);
   assert.equal((await call(port, '/api/sincronizar', { ...valid, body: '{}' })).status, 400);
@@ -267,15 +267,15 @@ test('POST bloqueia origem externa e exige JSON pequeno com ano', async (t) => {
 
 test('SSE bloqueia origem e Host externos e rejeita ano inválido antes de abrir a conexão', async (t) => {
   const port = await withServer(t);
-  assert.equal((await call(port, '/api/eventos?ano=2026', { headers: { Origin: 'https://externo.example' } })).status, 403);
-  assert.equal((await call(port, '/api/eventos?ano=2026', { headers: { 'Sec-Fetch-Site': 'cross-site' } })).status, 403);
-  assert.equal((await call(port, '/api/eventos?ano=2026', { headers: { Host: 'externo.example' } })).status, 403);
+  assert.equal((await call(port, '/api/eventos?ano=2026&mes=9', { headers: { Origin: 'https://externo.example' } })).status, 403);
+  assert.equal((await call(port, '/api/eventos?ano=2026&mes=9', { headers: { 'Sec-Fetch-Site': 'cross-site' } })).status, 403);
+  assert.equal((await call(port, '/api/eventos?ano=2026&mes=9', { headers: { Host: 'externo.example' } })).status, 403);
   assert.equal((await call(port, '/api/eventos?ano=../2026')).status, 400);
 });
 
 function openStream(port, year = 2026) {
   return new Promise((resolve, reject) => {
-    const req = request({ hostname: '127.0.0.1', port, path: `/api/eventos?ano=${year}` }, (response) => {
+    const req = request({ hostname: '127.0.0.1', port, path: `/api/eventos?ano=${year}&mes=9` }, (response) => {
       const messages = [], waiters = [];
       let buffer = '';
       response.setEncoding('utf8');
@@ -327,7 +327,7 @@ test('SSE HTTP liga coleta compartilhada, publica a alteração e a remoção pa
   await Promise.all(streams.map((stream) => stream.next('agenda')));
   await Promise.all(streams.map((stream) => stream.next('estado', (state) => state.estado === 'executando')));
   assert.equal(children.length, 1);
-  const manual = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"ano":2026}' };
+  const manual = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"ano":2026,"mes":9}' };
   assert.equal((await call(port, '/api/sincronizar', manual)).status, 202);
   assert.equal(children.length, 1);
   current = { ...current, geradoEm: new Date().toISOString(), eventos: [{ nome: 'Reunião recém-criada' }] };

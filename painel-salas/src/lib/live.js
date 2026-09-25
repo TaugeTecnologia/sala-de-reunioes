@@ -1,10 +1,12 @@
-/** Uma conexão por painel; EventSource reconecta sem criar consultas por aba. */
-export function connectAgenda({ year, onAgenda, onState, onConnection, EventSourceClass = globalThis.EventSource }) {
+import { periodAt } from './periods.js';
+
+/** Uma conexão por mês consultado; o servidor compartilha a coleta entre abas. */
+export function connectAgenda({ year, month = periodAt().mes, onAgenda, onState, onConnection, EventSourceClass = globalThis.EventSource }) {
   let active = true;
   let source;
   onConnection('conectando');
   try {
-    source = new EventSourceClass(`/api/eventos?ano=${encodeURIComponent(year)}`);
+    source = new EventSourceClass(`/api/eventos?ano=${encodeURIComponent(year)}&mes=${encodeURIComponent(month)}`);
   } catch {
     onConnection('indisponivel');
     return () => { active = false; };
@@ -15,13 +17,13 @@ export function connectAgenda({ year, onAgenda, onState, onConnection, EventSour
   const handleAgenda = (event) => {
     if (!active) return;
     const agenda = parse(event);
-    if (agenda?.periodo?.ano !== year || !Array.isArray(agenda.eventos) || !Array.isArray(agenda.salas)) return;
+    if (agenda?.periodo?.ano !== year || agenda.periodo.mes !== month || !Array.isArray(agenda.eventos) || !Array.isArray(agenda.salas)) return;
     onAgenda(agenda);
   };
   const handleState = (event) => {
     if (!active) return;
     const state = parse(event);
-    if (state?.ano !== year || !['ocioso', 'executando', 'concluido', 'erro'].includes(state.estado)) return;
+    if (state?.ano !== year || state.mes !== month || !['ocioso', 'executando', 'concluido', 'erro'].includes(state.estado)) return;
     onState(state);
   };
   const handleOpen = () => { if (active) onConnection('conectado'); };
@@ -45,7 +47,7 @@ export function connectionLabel(connection, state) {
 }
 
 export function shouldAcceptAgenda(incoming, current) {
-  if (!current || current.periodo?.ano !== incoming.periodo?.ano) return true;
+  if (!current || current.periodo?.ano !== incoming.periodo?.ano || current.periodo?.mes !== incoming.periodo?.mes) return true;
   const previousTime = Date.parse(current.geradoEm);
   const incomingTime = Date.parse(incoming.geradoEm);
   return !Number.isFinite(previousTime) || (Number.isFinite(incomingTime) && incomingTime >= previousTime);

@@ -35,7 +35,7 @@ function fakeSync(timer) {
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
     getState(ano) { return states.get(ano) || { estado: 'ocioso', ano }; },
     start(ano) { api.starts.push(ano); api.emit({ ano, estado: 'executando', iniciadoEm: new Date(timer.now()).toISOString() }); },
-    emit(state, agenda) { states.set(state.ano, state); for (const listener of listeners) listener({ state, agenda }); },
+    emit(state, agenda) { state = { mes: 9, ...state }; states.set(state.ano, state); for (const listener of listeners) listener({ state, agenda }); },
     finish(ano, agenda, success = true) { api.emit({ ano, estado: success ? 'concluido' : 'erro', finalizadoEm: new Date(timer.now()).toISOString(), mensagem: success ? 'Atualizado.' : 'A conexão falhou.' }, agenda); },
     cancelAutomatic(ano) { api.canceled.push(ano); },
     subscribers: () => listeners.size,
@@ -55,8 +55,8 @@ test('duas abas compartilham a consulta automática e recebem alteração e excl
   const monitor = createRealtimeMonitor({ sync, ...timer, load: async (year) => { loads++; return agenda(year, timer.now() - 60_000); } });
   const first = [], second = [];
   assert.equal(sync.starts.length, 0);
-  const leave1 = monitor.subscribe(2026, (type, value) => first.push({ type, value }));
-  const leave2 = monitor.subscribe(2026, (type, value) => second.push({ type, value }));
+  const leave1 = monitor.subscribe(2026, (type, value) => first.push({ type, value }), 9);
+  const leave2 = monitor.subscribe(2026, (type, value) => second.push({ type, value }), 9);
   await tick();
   timer.advance(0);
   assert.equal(loads, 1);
@@ -81,14 +81,14 @@ test('desconectar a última aba remove a consulta agendada; reconectar reproduz 
   const timer = clock(), sync = fakeSync(timer);
   const cached = agenda(2026, timer.now());
   const monitor = createRealtimeMonitor({ sync, ...timer, load: async () => cached });
-  const leave = monitor.subscribe(2026, () => {});
+  const leave = monitor.subscribe(2026, () => {}, 9);
   await tick();
   leave();
   timer.advance(60_000);
   assert.equal(sync.starts.length, 0);
   assert.deepEqual(sync.canceled, [2026]);
   const received = [];
-  const leaveAgain = monitor.subscribe(2026, (event, data) => received.push({ event, data }));
+  const leaveAgain = monitor.subscribe(2026, (event, data) => received.push({ event, data }), 9);
   assert.deepEqual(received.find((item) => item.event === 'agenda').data, cached);
   assert.equal(received.find((item) => item.event === 'estado').data.intervaloSegundos, 2);
   timer.advance(0);
@@ -101,12 +101,12 @@ test('desconectar a última aba remove a consulta agendada; reconectar reproduz 
 test('falhas mantêm a agenda visível e recuam 30s, 60s, 120s; sucesso restaura 2s', async () => {
   const timer = clock(), sync = fakeSync(timer), received = [];
   const monitor = createRealtimeMonitor({ sync, ...timer, load: async () => agenda(2026, timer.now() - 60_000) });
-  monitor.subscribe(2026, (event, data) => received.push({ event, data }));
+  monitor.subscribe(2026, (event, data) => received.push({ event, data }), 9);
   await tick();
   timer.advance(0);
   for (const delay of [30_000, 60_000, 120_000, 120_000]) {
     sync.finish(2026, undefined, false);
-    const state = monitor.getState(2026);
+    const state = monitor.getState(2026, 9);
     assert.equal(state.estado, 'erro');
     assert.equal(Date.parse(state.proximaConsultaEm) - timer.now(), delay);
     const calls = sync.starts.length;
@@ -117,15 +117,15 @@ test('falhas mantêm a agenda visível e recuam 30s, 60s, 120s; sucesso restaura
   }
   assert.equal(received.filter((item) => item.event === 'agenda').length, 1);
   sync.finish(2026, agenda(2026, timer.now()));
-  assert.equal(Date.parse(monitor.getState(2026).proximaConsultaEm) - timer.now(), 2_000);
+  assert.equal(Date.parse(monitor.getState(2026, 9).proximaConsultaEm) - timer.now(), 2_000);
   monitor.stop();
 });
 
 test('assinaturas isolam anos, iniciam sem exportação e não enviam dados de outro período', async () => {
   const timer = clock(), sync = fakeSync(timer), first = [], second = [];
   const monitor = createRealtimeMonitor({ sync, ...timer, load: async () => { throw new Error('Sem snapshot.'); } });
-  const leave1 = monitor.subscribe(2026, (event, data) => first.push({ event, data }));
-  const leave2 = monitor.subscribe(2027, (event, data) => second.push({ event, data }));
+  const leave1 = monitor.subscribe(2026, (event, data) => first.push({ event, data }), 9);
+  const leave2 = monitor.subscribe(2027, (event, data) => second.push({ event, data }), 9);
   await tick();
   timer.advance(0);
   assert.deepEqual(sync.starts, [2026, 2027]);

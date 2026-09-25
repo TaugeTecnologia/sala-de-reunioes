@@ -3,7 +3,8 @@ import { eventStatus, filterEvents, formatDate, formatDuration, formatTime, room
 import { meetingTimeline, isOffDefaultInterval } from './lib/meeting-timeline.js';
 import { currentWeek, weeklyCalendar } from './lib/week.js';
 import { maskDateInput, parseDateInput, dateInputCaret, findAgendaFocus, agendaResultWeeks, resultWeekNavigation } from './lib/agenda-filters.js';
-import { connectAgenda, connectionLabel, shouldAcceptAgenda } from './lib/live.js';
+import { calendarPeriods, overviewPeriods } from './lib/periods.js';
+import { useAgendaPeriods } from './useAgendaPeriods.js';
 import { watchClock } from './lib/clock.js';
 
 const NAV = [{ id: 'visao-geral', label: 'Visão geral', icon: 'grid' }, { id: 'agenda', label: 'Agenda', icon: 'calendar' }];
@@ -56,14 +57,6 @@ function rangeTime(event) {
   if (event.dia_inteiro) return 'Dia inteiro';
   if (formatDate(event.inicio) !== formatDate(event.fim)) return `${formatDate(event.inicio, { day: '2-digit', month: '2-digit' })} ${formatTime(event.inicio)} — ${formatDate(event.fim, { day: '2-digit', month: '2-digit' })} ${formatTime(event.fim)}`;
   return `${formatTime(event.inicio)} — ${formatTime(event.fim)}`;
-}
-
-async function request(url, options) {
-  const response = await fetch(url, { cache: 'no-store', ...options });
-  let body;
-  try { body = await response.json(); } catch { throw new Error('O serviço de dados não respondeu. Confira se o painel foi iniciado por completo.'); }
-  if (!response.ok) throw new Error(body.erro || 'Não foi possível carregar os dados.');
-  return body;
 }
 
 function Pill({ tone = 'neutral', children }) { return <span className={`pill ${tone}`}><span className="pill-dot"/>{children}</span>; }
@@ -401,9 +394,8 @@ function Overview({ data, open, liveState, liveConnection }) {
   </>;
 }
 
-function Agenda({ data, filters, setFilters, open }) {
+function Agenda({ data, filters, setFilters, open, selectedWeek, setSelectedWeek, loading }) {
   const [now, setNow] = useState(Date.now);
-  const [selectedWeek, setSelectedWeek] = useState(() => filters.data || null);
   const [resultDay, setResultDay] = useState('');
   const [dateText, setDateText] = useState(() => filters.data ? formatDate(filters.data) : '');
   const dateInput = useRef(null);
@@ -481,7 +473,7 @@ function Agenda({ data, filters, setFilters, open }) {
   </div>
     {dateIncomplete && <p className="filter-feedback" id={dateMessageId} role="status">{dateText.length === 10 ? 'Data inválida. Confira o dia, o mês e o ano.' : 'Digite os oito números: dia, mês e ano. A nova data será aplicada quando estiver completa.'}</p>}
     {activeFilters && <div className="agenda-filter-results">
-      <p role="status">{events.length ? `${events.length} ${events.length === 1 ? 'reunião encontrada' : 'reuniões encontradas'} · ${visibleCount} ${selectedDate ? 'neste dia' : 'nesta semana'}.` : 'Nenhuma reunião encontrada com esses filtros no período consultado.'}</p>
+      <p role="status">{events.length ? `${events.length} ${events.length === 1 ? 'reunião encontrada' : 'reuniões encontradas'} · ${visibleCount} ${selectedDate ? 'neste dia' : 'nesta semana'}.` : loading ? 'Carregando reuniões do período…' : 'Nenhuma reunião encontrada com esses filtros no período consultado.'}</p>
     </div>}
     <Calendar period={data.periodo} events={events} open={open} selectDate={date => change('data', date)} selectedDate={selectedDate} selectedWeek={selectedWeek} onWeekChange={changeWeek} focusKey={focusKey} highlightMatches={activeFilters} resultNavigation={resultNavigation} onResultWeekChange={navigateResults}/>
   </section>;
@@ -509,68 +501,32 @@ function EventDetail({ event, close }) {
 
 export default function App() {
   const [page, setPage] = useState(() => PAGES.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'visao-geral');
-  const [year] = useState(2026);
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [now, setNow] = useState(Date.now);
   const [filters, setFilters] = useState({ ...EMPTY_FILTERS });
+  const [selectedWeek, setSelectedWeek] = useState(null);
   const [detailKey, setDetailKey] = useState(null);
-  const detail = data?.eventos.find(event => eventKey(event) === detailKey) || null;
+  useEffect(() => watchClock(setNow), []);
+  const periods = page === 'agenda' ? calendarPeriods(selectedWeek ?? now, filters.data) : overviewPeriods(now);
+  const { data, loading, error, liveState, liveConnection, retry } = useAgendaPeriods(periods);
+  const detail = data.eventos.find(event => eventKey(event) === detailKey) || null;
   function setDetail(event) { setDetailKey(event ? eventKey(event) : null); }
-  const [manualLoading, setManualLoading] = useState(false);
-  const [liveState, setLiveState] = useState(null);
-  const [liveConnection, setLiveConnection] = useState('conectando');
-  const sync = manualLoading || liveState?.estado === 'executando';
-  const [syncMessage, setSyncMessage] = useState('');
-  const alive = useRef(true);
-  const currentRequest = useRef(0);
-  const load = useCallback(async () => {
-    const id = ++currentRequest.current;
-    setLoading(true); setError('');
-    try { const result = await request(`/api/agenda?ano=${year}`); if (alive.current && id === currentRequest.current) setData(previous => shouldAcceptAgenda(result, previous) ? result : previous); }
-    catch (e) { if (alive.current && id === currentRequest.current) setError(e.message); }
-    finally { if (alive.current && id === currentRequest.current) setLoading(false); }
-  }, [year]);
-  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
-  useEffect(() => { load(); }, [load]);
-  useEffect(() => {
-    setLiveState(null);
-    return connectAgenda({
-      year,
-      onAgenda: result => {
-        // Cache de reconexão ou GET antigo não deve desfazer uma coleta mais nova.
-        setData(previous => shouldAcceptAgenda(result, previous) ? result : previous);
-        setError(''); setLoading(false);
-      },
-      onState: setLiveState,
-      onConnection: setLiveConnection,
-    });
-  }, [year]);
-  useEffect(() => { if (data && detailKey && !data.eventos.some(event => eventKey(event) === detailKey)) setDetailKey(null); }, [data, detailKey]);
+  useEffect(() => { if (detailKey && !data.eventos.some(event => eventKey(event) === detailKey)) setDetailKey(null); }, [data, detailKey]);
   useEffect(() => { const callback = () => setPage(PAGES.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'visao-geral'); window.addEventListener('hashchange', callback); return () => window.removeEventListener('hashchange', callback); }, []);
-  async function synchronize() {
-    setManualLoading(true); setSyncMessage('Solicitando atualização da agenda…');
-    try {
-      const state = await request('/api/sincronizar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ano: year }) });
-      if (state.estado === 'erro') throw new Error(state.mensagem || 'Não foi possível atualizar a agenda.');
-      if (alive.current) setSyncMessage('Consulta solicitada. Os dados aparecerão automaticamente quando a coleta terminar.');
-    } catch (e) { if (alive.current) setSyncMessage(e.message); }
-    finally { if (alive.current) setManualLoading(false); }
-  }
   const title = page === 'agenda' ? 'Agenda da sala' : 'Visão geral';
   return <div className="app-shell"><a className="skip-link" href="#conteudo" onClick={event => { event.preventDefault(); document.getElementById('conteudo')?.focus(); }}>Pular para o conteúdo</a>
     <aside className="sidebar"><div className="brand"><img src="/brand/tauge-logo-light.svg" alt="Tauge Tecnologia" width="190" height="49" draggable={false}/></div><div className="workspace-tag"><span><Icon name="room" size={21}/></span><div><strong>Salas & encontros</strong><small>Gestão de espaços</small></div></div><p className="nav-label">ESPAÇO DE TRABALHO</p><nav aria-label="Navegação principal">{NAV.map(item => <a key={item.id} href={`#${item.id}`} className={page === item.id ? 'active' : ''} aria-current={page === item.id ? 'page' : undefined}><Icon name={item.icon}/>{item.label}{page === item.id && <span className="nav-active-dot"/>}</a>)}</nav><div className="sidebar-bottom"><div className="calendar-source"><GoogleMark/><div><strong>Google Calendar</strong><small>Dados da agenda da sala</small></div></div><div className="sidebar-footer"><span className="read-dot"/>Painel de acompanhamento</div></div></aside>
     <main id="conteudo" tabIndex={-1}><header className="topbar"><span>Gestão de espaços <Icon name="chevron" size={13}/> <strong>{title}</strong></span><div className="topbar-right"><span className="timezone">Brasília · UTC−03:00</span><span className="workspace-avatar"><img src="/brand/tauge-symbol.svg" width="30" height="30" alt="Tauge" draggable={false}/></span></div></header>
       <div className="main-content"><div className="page-heading"><div><h1>{title}</h1>{page === 'agenda' && <p>Datas, horários e pessoas. Tudo em uma única agenda.</p>}</div></div>
-      <div className="data-meta"><span><span className="read-dot"/>{data ? `Dados atualizados em ${formatDate(data.geradoEm)} às ${formatTime(data.geradoEm)}` : 'Agenda da sala de reunião'}</span></div>
+      <div className="data-meta"><span><span className="read-dot"/>{data.geradoEm ? `Dados atualizados em ${formatDate(data.geradoEm)} às ${formatTime(data.geradoEm)}` : 'Agenda da sala de reunião'}</span></div>
       {liveState?.estado === 'erro' && <div className="sync-message live-error" role="alert"><Icon name="info" size={17}/><span>{liveState.mensagem} Os últimos dados disponíveis foram mantidos.</span></div>}
       {error && data && <div className="sync-message live-error" role="alert"><Icon name="info" size={17}/><span>{error} Exibindo os últimos dados recebidos.</span></div>}
-      {syncMessage && <div className="sync-message" role="status"><Icon name="info" size={17}/><span>{syncMessage}</span><button aria-label="Dispensar mensagem" onClick={() => setSyncMessage('')} className="icon-button"><Icon name="close" size={16}/></button></div>}
-      {error && !data && liveState?.estado !== 'executando' ? <section className="panel error-panel"><Empty title="A agenda ainda não está disponível">{error}</Empty><button className="button secondary" onClick={load}>Tentar novamente</button></section> : !data ? <div className="loading-state" role="status"><span className="loader"/><p>Preparando a agenda da sala…</p></div> : <>
+      {loading && <div className="sync-message" role="status"><Icon name="refresh" size={17}/><span>Carregando reuniões do período selecionado…</span></div>}
+      {(error || liveState?.estado === 'erro') && <button type="button" className="button secondary" onClick={retry}>Tentar novamente</button>}
+      <div aria-busy={loading}>
         {page === 'visao-geral' && <Overview data={data} open={setDetail} liveState={liveState} liveConnection={liveConnection}/>}
-        {page === 'agenda' && <Agenda data={data} filters={filters} setFilters={setFilters} open={setDetail}/>}
+        {page === 'agenda' && <Agenda data={data} filters={filters} setFilters={setFilters} open={setDetail} selectedWeek={selectedWeek} setSelectedWeek={setSelectedWeek} loading={loading}/>}
         {data.avisos?.length > 0 && <div className="coverage-note"><Icon name="info" size={17}/><div><strong>Sobre a cobertura dos dados</strong><p>{[...new Set(data.avisos)].join(' ')}</p></div></div>}
-      </>}
+      </div>
       <footer className="main-footer"><span>GESTÃO DE ESPAÇOS</span></footer>
       </div>
     </main>{detail && <EventDetail event={detail} close={() => setDetail(null)}/>}</div>;

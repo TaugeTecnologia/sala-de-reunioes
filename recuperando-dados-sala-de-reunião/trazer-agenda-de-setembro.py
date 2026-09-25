@@ -1,6 +1,6 @@
-"""Exporta setembro diretamente das agendas das salas de reunião.
+"""Exporta qualquer mês e ano diretamente das agendas das salas de reunião.
 
-Uso: python trazer-agenda-de-setembro.py --ano 2026
+Uso: python trazer-agenda-de-setembro.py --ano 2027 --mes 1
 Nova autorização: python trazer-agenda-de-setembro.py --autorizar --ano 2026
 Veja README-agenda-setembro.md para permissões e delegação de domínio.
 """
@@ -46,7 +46,8 @@ class ErroAgenda(Exception):
 
 def argumentos():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--ano", type=int, default=2026, help="Ano de setembro (padrão: 2026).")
+    parser.add_argument("--ano", type=int, default=datetime.now(FUSO).year, help="Ano da consulta (padrão: ano atual).")
+    parser.add_argument("--mes", type=int, default=datetime.now(FUSO).month, help="Mês da consulta, de 1 a 12 (padrão: mês atual).")
     parser.add_argument("--token", type=Path, help="Token OAuth existente; relativo ao terminal.")
     parser.add_argument("--autorizar", action="store_true", help="Abre o login e salva um token separado.")
     parser.add_argument("--client-secret", type=Path, help="JSON OAuth usado com --autorizar.")
@@ -57,8 +58,10 @@ def argumentos():
     parser.add_argument("--reprocessar", type=Path, help="Filtra um JSON já exportado, sem conectar ao Google.")
     parser.add_argument("--painel", action="store_true", help="Atualiza apenas o JSON fixo do painel após uma coleta sem erros, sem Markdown.")
     args = parser.parse_args()
-    if not 1 <= args.ano <= 9999:
-        parser.error("--ano deve estar entre 1 e 9999.")
+    if not 1 <= args.ano <= 9998:
+        parser.error("--ano deve estar entre 1 e 9998.")
+    if not 1 <= args.mes <= 12:
+        parser.error("--mes deve estar entre 1 e 12.")
     if args.conta_servico and (args.autorizar or args.token or args.client_secret):
         parser.error("--conta-servico não pode ser combinado com as opções OAuth.")
     if bool(args.conta_servico) != bool(args.admin):
@@ -76,12 +79,28 @@ def argumentos():
     return args
 
 
-def periodo_setembro(ano):
-    """Intervalo com sobreposição ao mês, no horário de Brasília UTC-03:00."""
+def periodo_mensal(ano, mes):
+    """Mês completo, com fim exclusivo e virada de ano automática."""
+    if type(ano) is not int or not 1 <= ano <= 9998 or type(mes) is not int or not 1 <= mes <= 12:
+        raise ErroAgenda("Informe um ano entre 1 e 9998 e um mês entre 1 e 12.")
     return (
-        datetime(ano, 9, 1, tzinfo=FUSO).isoformat(),
-        datetime(ano, 10, 1, tzinfo=FUSO).isoformat(),
+        datetime(ano, mes, 1, tzinfo=FUSO).isoformat(),
+        datetime(ano + (mes == 12), 1 if mes == 12 else mes + 1, 1, tzinfo=FUSO).isoformat(),
     )
+
+
+def periodo_setembro(ano):
+    """Compatibilidade com chamadas anteriores; a coleta usa periodo_mensal."""
+    return periodo_mensal(ano, 9)
+
+
+def prefixo_exportacao(ano, mes):
+    periodo_mensal(ano, mes)
+    return f"agenda-{ano:04d}-{mes:02d}"
+
+
+def nome_periodo(relatorio):
+    return f"{relatorio.get('mes', 9):02d}/{relatorio['ano']:04d}"
 
 
 def validar_escopos(creds):
@@ -561,7 +580,7 @@ def salvar_gestao_sala(caminho_json, relatorio, salas=None):
     relatorio["gestao_sala"] = gestao
     resumo = gestao["resumo"]
     caminho = caminho_json.with_name(caminho_json.stem + "-salas.md")
-    linhas = [f"# Administração da sala — setembro de {relatorio['ano']}", "",
+    linhas = [f"# Administração da sala — {nome_periodo(relatorio)}", "",
               f"Horários UTC-03:00. Filtro: {texto_markdown(', '.join(gestao['filtros_sala']))}.", "",
               f"**{resumo['eventos_na_sala']} eventos únicos com sala indicada**, "
               f"{resumo['bloqueios_confirmados']} com bloqueio confirmado.", "",
@@ -643,8 +662,8 @@ def salvar_lista_eventos(caminho_json, relatorio):
     limitados = sum(usuario["status"] == "acesso_limitado" for usuario in usuarios)
     erros = sum(usuario["status"] == "erro" for usuario in usuarios)
     linhas = [
-        f"# Eventos de setembro de {relatorio['ano']} por e-mail corporativo", "",
-        f"Período: 01/09/{relatorio['ano']} a 30/09/{relatorio['ano']}, UTC-03:00.", "",
+        f"# Eventos de {nome_periodo(relatorio)} por e-mail corporativo", "",
+        f"Período: {nome_periodo(relatorio)}, UTC-03:00.", "",
         f"Agendas consultadas: **{len(usuarios)}** de **{relatorio['total_usuarios']}** usuários listados. "
         f"Registros de eventos: **{total}**. Agendas com acesso limitado: **{limitados}**. "
         f"Agendas com erro: **{erros}**.", "",
@@ -701,16 +720,17 @@ def executar(args):
     if getattr(args, "reprocessar", None):
         relatorio = json.loads(args.reprocessar.read_text(encoding="utf-8"))
         if (not isinstance(relatorio, dict) or not isinstance(relatorio.get("agendas", relatorio.get("usuarios")), list)
-                or not isinstance(relatorio.get("ano"), int) or relatorio.get("mes", 9) != 9
+                or type(relatorio.get("ano")) is not int or not 1 <= relatorio["ano"] <= 9998
+                or type(relatorio.get("mes", 9)) is not int or not 1 <= relatorio.get("mes", 9) <= 12
                 or any(not isinstance(u, dict) or not u.get("email") or not isinstance(u.get("eventos"), list)
                        for u in agendas_relatorio(relatorio))):
-            raise ErroAgenda("--reprocessar exige um JSON de setembro exportado por este script.")
+            raise ErroAgenda("--reprocessar exige um JSON mensal exportado por este script.")
         args.saida.mkdir(parents=True, exist_ok=True)
         identificador = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-        caminho = args.saida / f"agenda-setembro-{relatorio['ano']}-{identificador}.json"
+        caminho = args.saida / f"{prefixo_exportacao(relatorio['ano'], relatorio.get('mes', 9))}-{identificador}.json"
         relatorio["reprocessado_de"] = args.reprocessar.name
         relatorio["analise_em"] = datetime.now(timezone.utc).isoformat()
-        print(f"Reprocessando dados de setembro de {relatorio['ano']}, coletados em {relatorio.get('gerado_em', 'data não informada')}.")
+        print(f"Reprocessando dados de {nome_periodo(relatorio)}, coletados em {relatorio.get('gerado_em', 'data não informada')}.")
         salvar_gestao_sala(caminho, relatorio, getattr(args, "sala", None))
         parcial = not relatorio.get("coleta_finalizada") or any(u.get("status") != "ok" for u in agendas_relatorio(relatorio))
         if parcial:
@@ -718,17 +738,18 @@ def executar(args):
         return 2 if parcial else 0
     salas = resolver_salas(getattr(args, "sala", None))
     creds, conta_servico = carregar_credenciais(args)
-    inicio, fim = periodo_setembro(args.ano)
+    mes = getattr(args, "mes", datetime.now(FUSO).month)
+    inicio, fim = periodo_mensal(args.ano, mes)
     if not painel:
         print(f"Período: {inicio} até {fim} (limite final exclusivo).")
         print(f"Consultando diretamente {len(salas)} agenda(s) de sala de reunião...")
     with AuthorizedSession(creds, refresh_timeout=30) as sessao:
         args.saida.mkdir(parents=True, exist_ok=True)
         identificador = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-        caminho = args.saida / f"agenda-setembro-{args.ano}-{'atual' if painel else identificador}.json"
+        caminho = args.saida / f"{prefixo_exportacao(args.ano, mes)}-{'atual' if painel else identificador}.json"
         relatorio = {
             "ano": args.ano,
-            "mes": 9,
+            "mes": mes,
             "time_min": inicio,
             "time_max": fim,
             "fuso": "UTC-03:00",

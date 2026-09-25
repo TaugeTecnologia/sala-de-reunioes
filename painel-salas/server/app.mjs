@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { createRealtimeMonitor } from './realtime.mjs';
+import { periodAt, monthPeriod } from '../src/lib/periods.js';
 
 const PROJECT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const COLLECTOR_DIR = path.resolve(PROJECT_DIR, '../recuperando-dados-sala-de-reunião');
@@ -17,12 +18,18 @@ export class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
 }
 
-export function parseYear(value = 2026) {
-  if (!['number', 'string'].includes(typeof value) || !/^\d{1,4}$/.test(String(value)) || !Number.isInteger(Number(value)) || Number(value) < 1 || Number(value) > 9999) {
-    throw new HttpError(400, 'Informe um ano inteiro entre 1 e 9999.');
+export function parseYear(value = periodAt().ano) {
+  if (!['number', 'string'].includes(typeof value) || !/^\d{1,4}$/.test(String(value)) || !Number.isInteger(Number(value)) || Number(value) < 1 || Number(value) > 9998) {
+    throw new HttpError(400, 'Informe um ano inteiro entre 1 e 9998.');
   }
   return Number(value);
 }
+
+export function parseMonth(value = periodAt().mes) {
+  if (!['number', 'string'].includes(typeof value) || !/^\d{1,2}$/.test(String(value)) || Number(value) < 1 || Number(value) > 12) throw new HttpError(400, 'Informe um mês inteiro entre 1 e 12.');
+  return Number(value);
+}
+const periodKey = (year, month) => monthPeriod(year, month).key;
 
 const array = (value) => Array.isArray(value) ? value : [];
 const usable = (report) => array(report.agendas).some((room) => ['ok', 'acesso_limitado'].includes(room.status));
@@ -50,8 +57,9 @@ export function serializeReport(report, filename, extraWarnings = []) {
   };
 }
 
-export async function loadAgenda(year = 2026, exportDir = EXPORT_DIR) {
+export async function loadAgenda(year = periodAt().ano, exportDir = EXPORT_DIR, month = periodAt().mes) {
   year = parseYear(year);
+  month = parseMonth(month);
   let entries;
   try { entries = await readdir(exportDir, { withFileTypes: true }); }
   catch (error) {
@@ -61,12 +69,14 @@ export async function loadAgenda(year = 2026, exportDir = EXPORT_DIR) {
   const candidates = [];
   // Only collector exports are read. Credentials and unfinished .tmp files never enter this list.
   for (const entry of entries) {
-    if (!entry.isFile() || !/^agenda-setembro-\d{1,4}-(?:\d{8}T\d+Z|atual)\.json$/.test(entry.name)) continue;
+    if (!entry.isFile() || !/^agenda-(?:setembro-\d{1,4}|\d{4}-\d{2})-(?:\d{8}T\d+Z|atual)\.json$/.test(entry.name)) continue;
     try {
       const fullPath = path.join(exportDir, entry.name);
       if ((await stat(fullPath)).size > 32 * 1024 * 1024) continue;
       const report = JSON.parse(await readFile(fullPath, 'utf8'));
-      if (report.ano !== year || report.mes !== 9 || report.coleta_finalizada !== true || report.formato !== 'eventos_das_salas_v2' || report.origem_coleta !== 'agendas_das_salas' || !Array.isArray(report.gestao_sala?.eventos_na_sala)) continue;
+      if (report.ano !== year || report.mes !== month || report.coleta_finalizada !== true || report.formato !== 'eventos_das_salas_v2' || report.origem_coleta !== 'agendas_das_salas' || !Array.isArray(report.gestao_sala?.eventos_na_sala)) continue;
+      const expected = monthPeriod(year, month);
+      if (Date.parse(report.time_min) !== Date.parse(expected.inicio) || Date.parse(report.time_max) !== Date.parse(expected.fim)) continue;
       const timestamp = Date.parse(report.gerado_em);
       candidates.push({ report, name: entry.name, timestamp: Number.isNaN(timestamp) ? 0 : timestamp });
     } catch {
@@ -75,31 +85,31 @@ export async function loadAgenda(year = 2026, exportDir = EXPORT_DIR) {
   }
   candidates.sort((a, b) => b.timestamp - a.timestamp || b.name.localeCompare(a.name));
   const selected = candidates.find(({ report }) => usable(report)) || candidates[0];
-  if (!selected) throw new HttpError(404, `Ainda não há uma exportação concluída das salas para setembro de ${year}. Sincronize os dados.`);
+  if (!selected) throw new HttpError(404, `Ainda não há uma exportação concluída das salas para ${String(month).padStart(2, '0')}/${year}. Sincronize os dados.`);
   const warnings = selected !== candidates[0] ? ['A coleta mais recente apresentou falhas em todas as salas. Exibindo a última coleta concluída com dados acessíveis.'] : [];
   if (!usable(selected.report)) warnings.push('Todas as agendas apresentaram erro. Os eventos podem não estar disponíveis.');
   return serializeReport(selected.report, selected.name, warnings);
 }
 
-export function createSyncController({ spawnProcess = spawn, load = loadAgenda, timeoutMs = 180_000, collectorDir = COLLECTOR_DIR, python = process.env.PYTHON_EXECUTABLE || (existsSync(KNOWN_PYTHON) ? KNOWN_PYTHON : 'python') } = {}) {
+export function createSyncController({ spawnProcess = spawn, load = (year, month) => loadAgenda(year, EXPORT_DIR, month), timeoutMs = 180_000, collectorDir = COLLECTOR_DIR, python = process.env.PYTHON_EXECUTABLE || (existsSync(KNOWN_PYTHON) ? KNOWN_PYTHON : 'python') } = {}) {
   const states = new Map();
   const listeners = new Set();
   const queue = [];
   let active = null;
   let stopped = false;
-  let lastYear = 2026;
-  const idle = (ano) => ({ estado: 'ocioso', ano, mensagem: 'Pronto para atualizar os dados da sala.', iniciadoEm: null, finalizadoEm: null });
-  const getState = (year = lastYear) => ({ ...(states.get(year) || idle(year)) });
+  let lastPeriod = periodAt();
+  const idle = (ano, mes) => ({ estado: 'ocioso', ano, mes, mensagem: 'Pronto para atualizar os dados da sala.', iniciadoEm: null, finalizadoEm: null });
+  const getState = (year = lastPeriod.ano, month = lastPeriod.mes) => ({ ...(states.get(periodKey(year, month)) || idle(year, month)) });
   const publish = (state, agenda) => {
-    states.set(state.ano, state);
-    lastYear = state.ano;
+    states.set(periodKey(state.ano, state.mes), state);
+    lastPeriod = state;
     for (const listener of listeners) listener({ state: { ...state }, agenda });
   };
   const finish = (run, estado, mensagem, agenda) => {
     if (run.finished || active !== run || stopped) return;
     run.finished = true;
     clearTimeout(run.timer);
-    publish({ ...getState(run.year), estado, mensagem, finalizadoEm: new Date().toISOString() }, agenda);
+    publish({ ...getState(run.year, run.month), estado, mensagem, finalizadoEm: new Date().toISOString() }, agenda);
   };
   const release = (run) => {
     if (active !== run) return;
@@ -112,9 +122,9 @@ export function createSyncController({ spawnProcess = spawn, load = loadAgenda, 
     const run = queue.shift();
     active = run;
     run.started = new Date().toISOString();
-    publish({ ...idle(run.year), estado: 'executando', mensagem: `Consultando a agenda da sala em setembro de ${run.year}…`, iniciadoEm: run.started });
+    publish({ ...idle(run.year, run.month), estado: 'executando', mensagem: `Consultando a agenda da sala em ${String(run.month).padStart(2, '0')}/${run.year}…`, iniciadoEm: run.started });
     try {
-      run.child = spawnProcess(python, ['-X', 'utf8', path.join(collectorDir, 'trazer-agenda-de-setembro.py'), '--painel', '--ano', String(run.year)], {
+      run.child = spawnProcess(python, ['-X', 'utf8', path.join(collectorDir, 'trazer-agenda-de-setembro.py'), '--painel', '--mes', String(run.month), '--ano', String(run.year)], {
         cwd: collectorDir, shell: false, windowsHide: true, stdio: ['ignore', 'ignore', 'ignore'],
       });
     } catch {
@@ -137,7 +147,7 @@ export function createSyncController({ spawnProcess = spawn, load = loadAgenda, 
         return;
       }
       try {
-        const agenda = await load(run.year);
+        const agenda = await load(run.year, run.month);
         if (active !== run || stopped) return;
         const generated = Date.parse(agenda.geradoEm);
         if (!agenda.salas?.length || !agenda.salas.every((room) => ['ok', 'acesso_limitado'].includes(room.status)) || !Number.isFinite(generated) || generated < Date.parse(run.started)) {
@@ -160,18 +170,19 @@ export function createSyncController({ spawnProcess = spawn, load = loadAgenda, 
   return {
     getState,
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
-    start(value, { automatic = false } = {}) {
+    start(value, { automatic = false, month = periodAt().mes } = {}) {
       const year = parseYear(value);
+      month = parseMonth(month);
       if (stopped) throw new HttpError(503, 'O painel está sendo encerrado.');
-      const existing = (active?.year === year && !active.finished ? active : null) || queue.find((run) => run.year === year);
-      if (existing) { if (!automatic) existing.automatic = false; return getState(year); }
-      queue.push({ year, automatic, finished: false });
-      if (active) publish({ ...idle(year), mensagem: 'Aguardando a consulta em andamento; os anos são atualizados um por vez.' });
+      const existing = (active?.year === year && active.month === month && !active.finished ? active : null) || queue.find((run) => run.year === year && run.month === month);
+      if (existing) { if (!automatic) existing.automatic = false; return getState(year, month); }
+      queue.push({ year, month, automatic, finished: false });
+      if (active) publish({ ...idle(year, month), mensagem: 'Aguardando a consulta em andamento; os períodos são atualizados um por vez.' });
       pump();
-      return getState(year);
+      return getState(year, month);
     },
-    cancelAutomatic(year) {
-      const index = queue.findIndex((run) => run.year === year && run.automatic);
+    cancelAutomatic(year, month = periodAt().mes) {
+      const index = queue.findIndex((run) => run.year === year && run.month === month && run.automatic);
       if (index !== -1) queue.splice(index, 1);
     },
     stop() {
@@ -207,7 +218,7 @@ async function jsonBody(request) {
     const parsed = JSON.parse(body);
     if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') throw new Error();
     return parsed;
-  } catch { throw new HttpError(400, 'Envie um objeto JSON com o ano da coleta.'); }
+  } catch { throw new HttpError(400, 'Envie um objeto JSON com o ano e mês da coleta.'); }
 }
 
 const MIME_TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.json': 'application/json; charset=utf-8' };
@@ -240,7 +251,7 @@ async function serveFrontend(request, response, pathname, distDir) {
   }
 }
 
-export function createApp({ exportDir = EXPORT_DIR, distDir = path.join(PROJECT_DIR, 'dist'), syncController, load = (year) => loadAgenda(year, exportDir), realtimeOptions = {} } = {}) {
+export function createApp({ exportDir = EXPORT_DIR, distDir = path.join(PROJECT_DIR, 'dist'), syncController, load = (year, month) => loadAgenda(year, exportDir, month), realtimeOptions = {} } = {}) {
   const sync = syncController || createSyncController({ load });
   const realtime = createRealtimeMonitor({ sync, load, ...realtimeOptions });
   const streams = new Set();
@@ -257,9 +268,10 @@ export function createApp({ exportDir = EXPORT_DIR, distDir = path.join(PROJECT_
       const url = new URL(request.url, 'http://127.0.0.1');
       if (url.pathname.startsWith('/api/') && (request.headers['sec-fetch-site'] === 'cross-site' || (request.headers.origin && !LOCAL_ORIGINS.has(request.headers.origin) && request.headers.origin !== `http://${request.headers.host}`))) throw new HttpError(403, 'Origem não autorizada para acessar os dados locais.');
       if (url.pathname === '/api/agenda' && request.method === 'GET') {
-        sendJson(response, 200, await load(parseYear(url.searchParams.get('ano') ?? 2026)));
+        sendJson(response, 200, await load(parseYear(url.searchParams.get('ano') ?? undefined), parseMonth(url.searchParams.get('mes') ?? undefined)));
       } else if (url.pathname === '/api/eventos' && request.method === 'GET') {
-        const year = parseYear(url.searchParams.get('ano') ?? 2026);
+        const year = parseYear(url.searchParams.get('ano') ?? undefined);
+        const month = parseMonth(url.searchParams.get('mes') ?? undefined);
         response.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no', 'X-Content-Type-Options': 'nosniff' });
         response.flushHeaders();
         request.socket.setTimeout(0);
@@ -271,18 +283,18 @@ export function createApp({ exportDir = EXPORT_DIR, distDir = path.join(PROJECT_
             if (response.writableLength > 1024 * 1024) response.destroy();
             else response.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
           }
-        });
+        }, month);
         const heartbeat = setInterval(() => {
           if (!response.destroyed && !response.writableEnded) response.write(': conectado\n\n');
         }, 15_000);
         heartbeat.unref?.();
         response.once('close', () => { clearInterval(heartbeat); disconnect(); streams.delete(response); });
       } else if (url.pathname === '/api/sincronizacao' && request.method === 'GET') {
-        sendJson(response, 200, realtime.getState(parseYear(url.searchParams.get('ano') ?? 2026)));
+        sendJson(response, 200, realtime.getState(parseYear(url.searchParams.get('ano') ?? undefined), parseMonth(url.searchParams.get('mes') ?? undefined)));
       } else if (url.pathname === '/api/sincronizar' && request.method === 'POST') {
         const body = await jsonBody(request);
         if (!Object.hasOwn(body, 'ano')) throw new HttpError(400, 'Informe o ano da coleta.');
-        sendJson(response, 202, sync.start(parseYear(body.ano)));
+        sendJson(response, 202, sync.start(parseYear(body.ano), { month: parseMonth(body.mes) }));
       } else if (url.pathname.startsWith('/api/')) {
         throw new HttpError(404, 'Rota da API não encontrada.');
       } else if (request.method === 'GET' || request.method === 'HEAD') {

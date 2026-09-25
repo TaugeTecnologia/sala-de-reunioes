@@ -1,4 +1,4 @@
-"""Testes offline da exportação de setembro, sem credenciais ou APIs reais."""
+"""Testes offline da exportação mensal, sem credenciais ou APIs reais."""
 
 import importlib.util
 import io
@@ -6,6 +6,7 @@ import json
 import tempfile
 import unittest
 from copy import deepcopy
+from datetime import datetime
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
@@ -272,7 +273,7 @@ class TestAgendaSetembro(unittest.TestCase):
             resposta(200, {"accessRole": "writer", "items": [{"id": "caio-e1"}]}),
         )
         with tempfile.TemporaryDirectory(prefix="teste-agenda-") as pasta:
-            args = SimpleNamespace(ano=2026, sala=salas, saida=Path(pasta))
+            args = SimpleNamespace(ano=2026, mes=9, sala=salas, saida=Path(pasta))
             with (
                 patch.object(agenda, "argumentos", return_value=args),
                 patch.object(agenda, "carregar_credenciais", return_value=(object(), None)),
@@ -281,7 +282,7 @@ class TestAgendaSetembro(unittest.TestCase):
                 redirect_stdout(io.StringIO()),
             ):
                 codigo = agenda.main()
-            arquivos = list(Path(pasta).glob("agenda-setembro-2026-*.json"))
+            arquivos = list(Path(pasta).glob("agenda-2026-09-*.json"))
             self.assertEqual(len(arquivos), 1)
             relatorio = json.loads(arquivos[0].read_text(encoding="utf-8"))
             self.assertFalse(arquivos[0].with_suffix(".md").exists())
@@ -317,9 +318,9 @@ class TestSnapshotPainel(unittest.TestCase):
         evento.update(campos)
         return evento
 
-    def coletar(self, pasta, *respostas, salas=None):
+    def coletar(self, pasta, *respostas, salas=None, ano=2026, mes=9):
         sessao, chamadas = sessao_com_respostas(*respostas)
-        args = SimpleNamespace(ano=2026, sala=salas, saida=Path(pasta), painel=True)
+        args = SimpleNamespace(ano=ano, mes=mes, sala=salas, saida=Path(pasta), painel=True)
         terminal, erros = io.StringIO(), io.StringIO()
         with (
             patch.object(agenda, "argumentos", return_value=args),
@@ -333,6 +334,28 @@ class TestSnapshotPainel(unittest.TestCase):
             codigo = agenda.main()
         return codigo, terminal.getvalue(), erros.getvalue(), salvar, chamadas
 
+    def test_coleta_meses_e_anos_futuros_sem_sobrescrever_outro_periodo(self):
+        with tempfile.TemporaryDirectory(prefix="teste-meses-") as pasta:
+            for ano, mes in [(2027, 1), (2027, 12), (2028, 2)]:
+                codigo, _, _, _, chamadas = self.coletar(
+                    pasta, resposta(200, {"accessRole": "owner", "items": []}), ano=ano, mes=mes)
+                self.assertEqual(codigo, 0)
+                inicio, fim = agenda.periodo_mensal(ano, mes)
+                self.assertEqual(chamadas[0][1]["timeMin"], inicio)
+                self.assertEqual(chamadas[0][1]["timeMax"], fim)
+                relatorio = json.loads((Path(pasta) / f"agenda-{ano}-{mes:02d}-atual.json").read_text(encoding="utf-8"))
+                self.assertEqual((relatorio["ano"], relatorio["mes"]), (ano, mes))
+                self.assertTrue(relatorio["coleta_finalizada"])
+            self.assertEqual(len(list(Path(pasta).glob("*.json"))), 3)
+        self.assertEqual(agenda.periodo_mensal(2027, 12)[1], "2028-01-01T00:00:00-03:00")
+        inicio, fim = map(datetime.fromisoformat, agenda.periodo_mensal(2028, 2))
+        self.assertEqual((fim - inicio).days, 29)
+
+    def test_periodos_invalidos_sao_rejeitados(self):
+        for ano, mes in [(2027, 0), (2027, 13), (0, 1), (9999, 12), (2027, True)]:
+            with self.subTest(ano=ano, mes=mes), self.assertRaises(agenda.ErroAgenda):
+                agenda.periodo_mensal(ano, mes)
+
     def test_edicoes_refletidas_em_um_unico_snapshot_sem_checkpoint_ou_markdown(self):
         original = self.evento()
         editado = self.evento(summary="Projeto revisado", description="Pauta atualizada",
@@ -340,7 +363,7 @@ class TestSnapshotPainel(unittest.TestCase):
                              end={"dateTime": "2026-09-11T16:00:00-03:00"},
                              attendees=[{"email": "novo@example.test", "responseStatus": "tentative"}])
         with tempfile.TemporaryDirectory(prefix="teste-snapshot-") as pasta:
-            caminho = Path(pasta) / "agenda-setembro-2026-atual.json"
+            caminho = Path(pasta) / "agenda-2026-09-atual.json"
             for evento in (original, editado):
                 codigo, terminal, _, salvar, chamadas = self.coletar(
                     pasta, resposta(200, {"accessRole": "owner", "items": [evento]}))
@@ -363,7 +386,7 @@ class TestSnapshotPainel(unittest.TestCase):
 
     def test_coleta_vazia_ou_cancelada_substitui_reservas_antigas(self):
         with tempfile.TemporaryDirectory(prefix="teste-snapshot-vazio-") as pasta:
-            caminho = Path(pasta) / "agenda-setembro-2026-atual.json"
+            caminho = Path(pasta) / "agenda-2026-09-atual.json"
             for restantes in ([], [self.evento(status="cancelled")]):
                 with self.subTest(restantes=restantes):
                     self.coletar(pasta, resposta(200, {"accessRole": "owner", "items": [self.evento()]}))
@@ -380,7 +403,7 @@ class TestSnapshotPainel(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="teste-snapshot-reader-") as pasta:
             codigo, _, erros, salvar, _ = self.coletar(
                 pasta, resposta(200, {"accessRole": "reader", "items": [self.evento()]}))
-            relatorio = json.loads((Path(pasta) / "agenda-setembro-2026-atual.json").read_text(encoding="utf-8"))
+            relatorio = json.loads((Path(pasta) / "agenda-2026-09-atual.json").read_text(encoding="utf-8"))
         self.assertEqual(codigo, 2)
         self.assertEqual(erros, "")
         salvar.assert_called_once()
@@ -392,7 +415,7 @@ class TestSnapshotPainel(unittest.TestCase):
 
     def test_falha_na_pagina_seguinte_preserva_snapshot_sem_gravar_parcial(self):
         with tempfile.TemporaryDirectory(prefix="teste-snapshot-parcial-") as pasta:
-            caminho = Path(pasta) / "agenda-setembro-2026-atual.json"
+            caminho = Path(pasta) / "agenda-2026-09-atual.json"
             self.coletar(pasta, resposta(200, {"accessRole": "owner", "items": [self.evento()]}))
             anterior = caminho.read_bytes()
             codigo, _, erros, salvar, chamadas = self.coletar(
