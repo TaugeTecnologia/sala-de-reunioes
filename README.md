@@ -35,41 +35,86 @@ Configuração:
 
 Sem `GOOGLE_CLIENT_ID`, ninguém consegue entrar. A sessão dura 8 horas (cookie `HttpOnly`).
 
-## Publicação: front no GitHub Pages, backend neste servidor
+## Publicação: front no GitHub Pages, backend no Vercel
 
-- **Backend** (`server/`, `coletor/`): roda neste servidor em Docker (`Dockerfile`, `docker-compose.yml`),
-  com um túnel HTTPS da Cloudflare na frente. Nenhuma porta é aberta na internet.
-- **Front** (`src/`): publicado em https://taugetecnologia.github.io/sala-de-reunioes/ e apontando
-  para a URL da API (`VITE_API_URL`).
+Nenhum dos dois depende deste servidor nem de um túnel. Front e backend ficam em serviços com
+endereço fixo desde o primeiro deploy.
 
-### Subir tudo
+- **Front** (`src/`): estático, publicado em https://taugetecnologia.github.io/sala-de-reunioes/.
+- **Backend** (`api/`): funções sem estado no Vercel — `api/auth/*.js` (Node, login/sessão) e
+  `api/agenda.py` (Python, busca a agenda direto do Google Calendar a cada chamada, reaproveitando
+  `coletor/trazer-agenda-de-setembro.py`). Sem processo contínuo e sem arquivo de token: a
+  credencial do Google vem de variáveis de ambiente. Por isso o painel usa consulta periódica
+  (a cada 5 s) em vez de atualização por streaming — o Vercel não sustenta uma conexão longa.
+
+### Colocar o backend no ar (uma vez)
+
+1. No [painel do Vercel](https://vercel.com/new), importe este repositório do GitHub. Não precisa
+   de CLI nem de configurar build: é só funções em `api/`.
+2. Em **Settings → Environment Variables**, defina:
+
+   | Variável | Valor |
+   | --- | --- |
+   | `EMAIL_DOMINIO` | `tauge.com.br` |
+   | `GOOGLE_CLIENT_ID` | o mesmo ID do cliente Web usado no botão "Continuar com o Google" |
+   | `SESSAO_SEGREDO` | gere com `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
+   | `ALLOWED_ORIGIN` | `https://taugetecnologia.github.io` |
+   | `GOOGLE_OAUTH_CLIENT_ID` | ID do cliente OAuth (tipo Área de trabalho) usado com `--autorizar` |
+   | `GOOGLE_OAUTH_CLIENT_SECRET` | segredo desse mesmo cliente |
+   | `GOOGLE_REFRESH_TOKEN` | campo `refresh_token` de `coletor/token-agenda-setembro.json` |
+
+   As três últimas vêm do arquivo gerado por `python trazer-agenda-de-setembro.py --autorizar`
+   (veja `coletor/README-agenda-setembro.md`). Nenhuma delas é commitada — ficam só no Vercel.
+3. Deploy. O projeto ganha um endereço fixo, tipo `https://sala-de-reunioes-api.vercel.app`, que
+   **não muda** em novos deploys. Dá para colocar um domínio próprio depois (Settings → Domains).
+4. Publique o front apontando para esse endereço:
+
+   ```bash
+   VITE_API_URL=https://sala-de-reunioes-api.vercel.app npm run publicar
+   ```
+
+Deploys seguintes do backend são automáticos: todo push em `main` publica sozinho (é assim que o
+Vercel funciona ao importar um repositório do GitHub). O front só precisa ser republicado se o
+endereço do backend mudar.
+
+### Testar as funções sem depender do Vercel
+
+```bash
+npm test                                   # funções Node (server/ e api/_lib usados por elas)
+python3 -m unittest coletor.test_agenda_setembro api.test_agenda_api   # coletor + api/agenda.py
+```
+
+Os testes de `api/agenda.py` simulam a resposta do Google (sem rede nem credenciais reais).
+
+- **Google:** em *Origens JavaScript autorizadas* do cliente Web, inclua
+  `https://taugetecnologia.github.io`.
+- **Cookies:** a sessão vai no cabeçalho `Authorization` (guardado no navegador), não só em cookie,
+  então funciona mesmo em navegadores que bloqueiam cookie de terceiros entre domínios diferentes.
+
+## Alternativa: backend neste servidor, com Docker
+
+Serve para testar localmente ou como contingência; não é o caminho recomendado, porque cria uma
+dependência deste servidor (o endereço muda se ele reiniciar).
 
 ```bash
 bash scripts/subir.sh                 # backend + túnel; imprime a URL da API
 PUBLICAR=1 bash scripts/subir.sh      # idem, e republica o front já apontando para essa URL
 ```
 
-O script cria o `.env` (gera o `SESSAO_SEGREDO`), sobe os contêineres e espera o túnel. O túnel
-temporário (`*.trycloudflare.com`) **muda de endereço sempre que o contêiner do túnel é recriado ou
-o servidor reinicia**; nesse caso, rode `PUBLICAR=1 bash scripts/subir.sh` de novo. Para um endereço
-fixo, crie um túnel nomeado na Cloudflare com um domínio próprio, coloque `TUNNEL_TOKEN` no `.env` e
-use `docker compose --profile fixo up -d`; depois publique com `VITE_API_URL=https://api.seu-dominio npm run publicar`.
-
-### Operação
+O script cria o `.env` (gera o `SESSAO_SEGREDO`), sobe os contêineres em Docker
+(`Dockerfile`, `docker-compose.yml`) e espera o túnel HTTPS da Cloudflare. O túnel temporário
+(`*.trycloudflare.com`) muda de endereço sempre que o contêiner do túnel é recriado ou o servidor
+reinicia; nesse caso, rode `PUBLICAR=1 bash scripts/subir.sh` de novo. Para um endereço fixo, crie
+um túnel nomeado na Cloudflare com um domínio próprio, coloque `TUNNEL_TOKEN` no `.env` e use
+`docker compose --profile fixo up -d`.
 
 ```bash
 docker compose ps                                       # estado
 docker compose logs -f painel                           # logs do backend
 ```
 
-Dados que ficam no servidor (fora do Git): `.env` e, em `coletor/`, o token do
-Google e a pasta `exportacoes/`.
-
-- **Google:** em *Origens JavaScript autorizadas* do cliente OAuth, inclua
-  `https://taugetecnologia.github.io`.
-- **Cookies:** navegadores como o Safari bloqueiam cookies de terceiros. Para o login se manter em
-  todos eles, use um domínio próprio para os dois lados (por exemplo `salas.tauge.com` no Pages e
-  `api.tauge.com` no backend). O endereço do túnel também abre o painel completo, sem esse problema.
+Dados que ficam no servidor (fora do Git): `.env` e, em `coletor/`, o token do Google e a pasta
+`exportacoes/`.
 
 ## O que aparece
 

@@ -6,3 +6,4 @@ dist/
 !.env.example
 tmp/
 dados/
+__pycache__/

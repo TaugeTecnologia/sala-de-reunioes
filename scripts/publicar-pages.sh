@@ -8,8 +8,10 @@ REPO="${PAGES_REPO:-TaugeTecnologia/sala-de-reunioes}"
 BASE="/${REPO#*/}/"
 [ -n "${VITE_API_URL:-}" ] || echo "Aviso: VITE_API_URL não definido; o site abrirá sem conexão com o backend." >&2
 
-# Túneis rápidos da Cloudflare não entregam Server-Sent Events: o painel usa consulta periódica.
-case "${VITE_API_URL:-}" in *.trycloudflare.com*) export VITE_TEMPO_REAL=polling ;; esac
+# Nem o túnel rápido da Cloudflare nem as funções do Vercel entregam Server-Sent Events de
+# longa duração: com um backend externo, o painel usa consulta periódica por padrão. Para uma
+# API que sustente SSE de verdade, exporte VITE_TEMPO_REAL=sse antes de publicar.
+if [ -n "${VITE_API_URL:-}" ] && [ -z "${VITE_TEMPO_REAL:-}" ]; then export VITE_TEMPO_REAL=polling; fi
 npx vite build --base="$BASE"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT

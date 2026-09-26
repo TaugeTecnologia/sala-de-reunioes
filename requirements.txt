@@ -1,0 +1,4 @@
+# Dependências das funções Python do Vercel (api/agenda.py). Reaproveita coletor/trazer-agenda-de-setembro.py,
+# mas sem o fluxo interativo (--autorizar), então google-auth-oauthlib não é necessário aqui.
+google-auth>=2.0,<3
+requests>=2.31,<3
