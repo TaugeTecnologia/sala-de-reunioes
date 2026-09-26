@@ -118,9 +118,10 @@ Dados que ficam no servidor (fora do Git): `.env` e, em `coletor/`, o token do G
 
 ## O que aparece
 
-- **Visão geral:** situação atual da sala, próxima reunião, dia da semana e data
-  de hoje, quantidade de salas acompanhadas e lista de reuniões do dia com abas
-  Atuais e Histórico.
+- **Visão do dia:** situação atual da sala, próxima reunião, dia da semana e data
+  de hoje, quantidade de salas acompanhadas e a lista **Reuniões de hoje**, com um
+  indicador de quantas reuniões há no dia, quantas estão em andamento e quantas
+  ainda vão acontecer.
 - **Calendário semanal na Agenda:** segunda a sábado, com dia/data no cabeçalho e as 24
   horas à esquerda. Ao abrir e na virada do dia, a rolagem destaca a hora atual,
   com contexto anterior e espaço para os próximos horários. A rolagem manual
@@ -154,14 +155,14 @@ Dados que ficam no servidor (fora do Git): `.env` e, em `coletor/`, o token do G
   O filtro **Situação da reserva** oferece **Todas as situações**, **Finalizada**,
   **Em andamento** e **Prevista**, segundo o início e fim reais. A seleção acompanha
   o relógio a cada segundo e independe da confirmação do convite da sala.
-- **Lista de reuniões:** na visão geral, mostra somente reuniões que ocupam alguma
+- **Lista de reuniões:** na visão do dia, mostra somente reuniões que ocupam alguma
   parte do dia atual em Brasília, incluindo dia inteiro e passagem da meia-noite.
   As colunas são **Horário / data**, **Evento**, **Organizador**, **Convidados** e
   **Situação**. A visualização única mostra uma sequência neutra de horários, de **30 em 30 minutos**
   por padrão, de 00:00 a 23:30. Quando os horários de início ou fim exigem uma
   escala menor, apenas aquele dia se adapta ao maior intervalo comum compatível
   com os eventos (por exemplo, 15, 10, 5 ou 1 minuto). O cálculo considera todas as
-  reuniões do dia e mantém a mesma escala entre Atuais e Histórico. Dias inteiros
+  reuniões do dia e mantém a mesma escala durante todo o dia. Dias inteiros
   e eventos de outros dias não reduzem os intervalos. A coluna usa cor e fonte
   uniformes, sem realçar as horas cheias. Escalas muito pequenas ganham espaço
   para manter os horários legíveis e a rolagem preserva o trecho que estava aberto.
@@ -174,20 +175,20 @@ Dados que ficam no servidor (fora do Git): `.env` e, em `coletor/`, o token do G
   preservando os horários originais nos detalhes. Intervalos vazios ficam em branco.
   Os blocos resumem os convidados e abrem o modal de detalhes completos ao clicar.
   Eventos muito curtos mantêm sua altura real na linha do tempo.
-  A aba **Atuais** exibe reuniões em andamento e futuras; **Histórico** exibe
-  as encerradas hoje. O início e fim reais aparecem junto ao nome do evento,
-  sem arredondamento nem repetição a cada intervalo.
-  As contagens e a separação
-  acompanham o relógio a cada segundo; a reunião muda de aba no horário de término.
+  A lista mostra todas as reuniões do dia, em ordem de horário; o indicador
+  (**reuniões hoje**, **em andamento**, **a acontecer**) conta só as de hoje. O início e fim
+  reais aparecem junto ao nome do evento, sem arredondamento nem repetição a cada intervalo.
+  As contagens acompanham o relógio a cada segundo: uma reunião passa de "a acontecer"
+  para "em andamento" ao começar e sai da contagem ao terminar.
   À meia-noite a lista muda automaticamente para o novo dia. Eventos sem intervalo
   válido não são atribuídos a hoje; os dados originais são preservados.
-  Na visão geral, a área recolhida mantém altura fixa equivalente a quatro linhas,
-  mesmo quando há menos reuniões ou nenhuma. As abas Atuais e Histórico ficam
-  junto ao título e mantêm a mesma altura ao alternar. A rolagem dá acesso às demais
+  Na visão do dia, a área recolhida mantém altura fixa equivalente a quatro linhas,
+  mesmo quando há menos reuniões ou nenhuma. O indicador fica
+  junto ao título. A rolagem dá acesso às demais
   reuniões, com rodapé compacto junto à base do card.
   Todas as reuniões permanecem na lista. O botão **Exibir tudo** fica sempre
-  visível e expande a lista da aba selecionada; **Recolher lista** restaura a rolagem.
-  Abrir, recolher ou trocar de aba posiciona a rolagem perto da hora atual.
+  visível e expande a lista; **Recolher lista** restaura a rolagem.
+  Abrir ou recolher posiciona a rolagem perto da hora atual.
   A rolagem manual permanece livre durante as atualizações. **Exibir tudo** mostra
   o dia completo. O card da sala é apenas informativo, sem botão de navegação.
 - **Detalhes do evento:** início/fim, criador, organizador, descrição, convidados,
@@ -196,7 +197,7 @@ Dados que ficam no servidor (fora do Git): `.env` e, em `coletor/`, o token do G
 Não há aba, botão ou formulário de criação de reservas. A ilustração da sala é
 decorativa; não representa uma planta real nem informa capacidade.
 
-A integração aceita **todos os meses e anos**, inclusive futuros. Use os botões de semana ou digite uma data em **DD/MM/AAAA** para acessar o período desejado. A coleta é mensal, sob demanda; não tenta expandir recorrências por infinitos anos. A Visão geral acompanha o mês atual e o seguinte e muda automaticamente na virada do mês/ano. A próxima reunião é procurada nesse intervalo; a Agenda permite consultar datas mais distantes.
+A integração aceita **todos os meses e anos**, inclusive futuros. Use os botões de semana ou digite uma data em **DD/MM/AAAA** para acessar o período desejado. A coleta é mensal, sob demanda; não tenta expandir recorrências por infinitos anos. A Visão do dia acompanha o mês atual e o seguinte e muda automaticamente na virada do mês/ano. A próxima reunião é procurada nesse intervalo; a Agenda permite consultar datas mais distantes.
 Horários são apresentados em UTC-03:00, independentemente do fuso do navegador.
 
 ## Integração dos dados

@@ -144,6 +144,12 @@ function localDayStart(now) {
   return timestamp(`${parts.year}-${parts.month}-${parts.day}`);
 }
 
+/** Contagens do dia para o indicador: total, em andamento, a acontecer (ainda não começaram) e encerradas. */
+export function dayIndicator(events, now = Date.now()) {
+  const count = phase => events.filter(event => meetingPhase(event, now) === phase).length;
+  return { total: events.length, emAndamento: count('em-andamento'), aAcontecer: count('previstos'), encerradas: count('finalizados') };
+}
+
 /** Reuniões que ocupam alguma parte de hoje no fuso do painel. */
 export function todaysMeetings(events, now = Date.now()) {
   const start = localDayStart(now);

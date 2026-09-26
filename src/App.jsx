@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
-import { eventStatus, filterEvents, formatDate, formatDuration, formatTime, roomAvailability, nextRoomMeeting, splitMeetings, todaysMeetings } from './lib/agenda.js';
+import { eventStatus, filterEvents, formatDate, formatDuration, formatTime, roomAvailability, nextRoomMeeting, dayIndicator, todaysMeetings } from './lib/agenda.js';
 import { meetingTimeline, isOffDefaultInterval } from './lib/meeting-timeline.js';
 import { currentWeek, weeklyCalendar } from './lib/week.js';
 import { maskDateInput, parseDateInput, dateInputCaret, findAgendaFocus, agendaResultWeeks, resultWeekNavigation } from './lib/agenda-filters.js';
@@ -7,16 +7,12 @@ import { calendarPeriods, overviewPeriods } from './lib/periods.js';
 import { useAgendaPeriods } from './useAgendaPeriods.js';
 import { watchClock } from './lib/clock.js';
 
-const NAV = [{ id: 'visao-geral', label: 'Visão geral', icon: 'grid' }, { id: 'agenda', label: 'Agenda', icon: 'calendar' }];
+const NAV = [{ id: 'visao-geral', label: 'Visão do dia', icon: 'grid' }, { id: 'agenda', label: 'Agenda', icon: 'calendar' }];
 const PAGES = NAV.map(item => item.id);
 const ANSWERS = { accepted: ['Aceitou', 'green'], declined: ['Recusou', 'red'], tentative: ['Talvez', 'warning'], needsAction: ['Sem resposta', 'neutral'] };
 const EMPTY_FILTERS = { busca: '', data: '', sala: '', status: 'todos' };
 const CALENDAR_HOUR_HEIGHT = 56;
 const CALENDAR_HOURS = Array.from({ length: 24 }, (_, hour) => hour);
-const MEETING_TABS = [
-  { id: 'atuais', label: 'Atuais' },
-  { id: 'historico', label: 'Histórico' },
-];
 
 function Icon({ name, size = 20, ...props }) {
   const paths = {
@@ -182,50 +178,28 @@ function ScrollableMeetings({ events, dayEvents, open, now }) {
 
 function MeetingsPanel({ data, open }) {
   const [now, setNow] = useState(Date.now);
-  const [activeTab, setActiveTab] = useState('atuais');
-  const tabButtons = useRef({});
-  const tabsId = useId();
   useEffect(() => watchClock(setNow), []);
   const events = todaysMeetings(data.eventos, now);
-  const groups = splitMeetings(events, now);
-  const total = events.length;
-
-  function navigateTabs(event, index) {
-    let nextIndex;
-    if (event.key === 'ArrowRight') nextIndex = (index + 1) % MEETING_TABS.length;
-    else if (event.key === 'ArrowLeft') nextIndex = (index + MEETING_TABS.length - 1) % MEETING_TABS.length;
-    else if (event.key === 'Home') nextIndex = 0;
-    else if (event.key === 'End') nextIndex = MEETING_TABS.length - 1;
-    else return;
-    event.preventDefault();
-    const nextTab = MEETING_TABS[nextIndex].id;
-    setActiveTab(nextTab);
-    tabButtons.current[nextTab]?.focus();
-  }
+  const day = dayIndicator(events, now);
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
   return <section className="panel bottom-agenda meetings-panel" aria-labelledby="meetings-title">
     <div className="panel-heading meetings-heading">
       <div className="meetings-heading-row">
-        <h2 id="meetings-title">Lista de reuniões</h2>
-        <div className="meeting-tabs" role="tablist" aria-label="Período das reuniões">
-          {MEETING_TABS.map((tab, index) => <button
-            type="button" role="tab" className="meeting-tab" key={tab.id}
-            id={`${tabsId}-tab-${tab.id}`} aria-controls={`${tabsId}-panel-${tab.id}`}
-            aria-selected={activeTab === tab.id} tabIndex={activeTab === tab.id ? 0 : -1}
-            ref={node => { tabButtons.current[tab.id] = node; }}
-            onClick={() => setActiveTab(tab.id)} onKeyDown={event => navigateTabs(event, index)}
-          >{tab.label}<span className="meeting-tab-count">{groups[tab.id].length}</span></button>)}
+        <h2 id="meetings-title">Reuniões de hoje</h2>
+        <div className="day-indicator" role="status" aria-label={`${plural(day.total, 'reunião', 'reuniões')} hoje; ${day.emAndamento} em andamento; ${plural(day.aAcontecer, 'ainda por acontecer', 'ainda por acontecer')}`}>
+          <span className="day-stat"><strong>{day.total}</strong><small>{day.total === 1 ? 'reunião hoje' : 'reuniões hoje'}</small></span>
+          {day.emAndamento > 0 && <span className="day-stat live"><strong>{day.emAndamento}</strong><small>em andamento</small></span>}
+          <span className="day-stat upcoming"><strong>{day.aAcontecer}</strong><small>a acontecer</small></span>
         </div>
       </div>
       <div className="meeting-view-toolbar">
-        <p>Hoje, {formatDate(now)} · {total} {total === 1 ? 'reunião' : 'reuniões'} no dia</p>
+        <p>Hoje, {formatDate(now)}</p>
       </div>
     </div>
-    {MEETING_TABS.map(tab => <div
-      role="tabpanel" key={tab.id} id={`${tabsId}-panel-${tab.id}`}
-      aria-labelledby={`${tabsId}-tab-${tab.id}`} hidden={activeTab !== tab.id}
-      className="meeting-tab-panel" tabIndex={0}
-    >{activeTab === tab.id && <ScrollableMeetings events={groups[tab.id]} dayEvents={events} open={open} now={now}/>}</div>)}
+    <div className="meeting-day-panel">
+      <ScrollableMeetings events={events} dayEvents={events} open={open} now={now}/>
+    </div>
   </section>;
 }
 
@@ -512,7 +486,7 @@ export default function App({ usuario = null, onLogout = null }) {
   function setDetail(event) { setDetailKey(event ? eventKey(event) : null); }
   useEffect(() => { if (detailKey && !data.eventos.some(event => eventKey(event) === detailKey)) setDetailKey(null); }, [data, detailKey]);
   useEffect(() => { const callback = () => setPage(PAGES.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'visao-geral'); window.addEventListener('hashchange', callback); return () => window.removeEventListener('hashchange', callback); }, []);
-  const title = page === 'agenda' ? 'Agenda da sala' : 'Visão geral';
+  const title = page === 'agenda' ? 'Agenda da sala' : 'Visão do dia';
   return <div className="app-shell"><a className="skip-link" href="#conteudo" onClick={event => { event.preventDefault(); document.getElementById('conteudo')?.focus(); }}>Pular para o conteúdo</a>
     <aside className="sidebar"><div className="brand"><img src={`${import.meta.env.BASE_URL}brand/tauge-logo-light.svg`} alt="Tauge Tecnologia" width="190" height="49" draggable={false}/></div><div className="workspace-tag"><span><Icon name="room" size={21}/></span><div><strong>Salas & encontros</strong><small>Gestão de espaços</small></div></div><p className="nav-label">ESPAÇO DE TRABALHO</p><nav aria-label="Navegação principal">{NAV.map(item => <a key={item.id} href={`#${item.id}`} className={page === item.id ? 'active' : ''} aria-current={page === item.id ? 'page' : undefined}><Icon name={item.icon}/>{item.label}{page === item.id && <span className="nav-active-dot"/>}</a>)}</nav><div className="sidebar-bottom"><div className="calendar-source"><GoogleMark/><div><strong>Google Calendar</strong><small>Dados da agenda da sala</small></div></div><div className="sidebar-footer"><span className="read-dot"/>Painel de acompanhamento</div></div></aside>
     <main id="conteudo" tabIndex={-1}><header className="topbar"><span>Gestão de espaços <Icon name="chevron" size={13}/> <strong>{title}</strong></span><div className="topbar-right"><span className="timezone">Brasília · UTC−03:00</span><span className="workspace-avatar"><img src={`${import.meta.env.BASE_URL}brand/tauge-symbol.png`} width="30" height="30" alt="Tauge" draggable={false}/></span>{usuario && <span className="user-menu"><span className="user-name" title={usuario.email}>{usuario.nome || usuario.email}</span>{onLogout && <button type="button" className="logout-button" onClick={onLogout}>Sair</button>}</span>}</div></header>

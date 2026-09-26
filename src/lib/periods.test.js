@@ -12,7 +12,7 @@ test('mês completo respeita ano bissexto e virada de dezembro para janeiro', ()
   for (const args of [[2027, 0], [2027, 13], [2027, 1.5], [9999, 12], [0, 1]]) assert.throws(() => monthPeriod(...args));
 });
 
-test('Visão geral acompanha a meia-noite de Brasília inclusive nos próximos anos', () => {
+test('Visão do dia acompanha a meia-noite de Brasília inclusive nos próximos anos', () => {
   assert.equal(periodAt('2027-01-01T02:59:59Z').key, '2026-12');
   assert.equal(periodAt('2027-01-01T03:00:00Z').key, '2027-01');
   assert.deepEqual(overviewPeriods('2030-12-31').map(item => item.key), ['2030-12', '2031-01']);

@@ -205,14 +205,7 @@ h2 { font-size: 19px; }
 .meetings-heading-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 14px; }
 .meetings-heading-row > h2 { margin: 0; }
 .meetings-panel .meetings-heading > p { margin-top: 4px; max-width: none; }
-.meeting-tab-panel:not([hidden]) { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-.meeting-tabs { display: flex; flex-shrink: 0; gap: 3px; width: fit-content; max-width: 100%; padding: 3px; margin: 0; border-radius: 8px; background: #edf3f7; }
-.meeting-tab { display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 34px; padding: 6px 11px; border: 0; border-radius: 6px; background: transparent; color: #5d7285; font-size: 11px; font-weight: 500; }
-.meeting-tab:hover { background: #e4edf4; color: var(--navy); }
-.meeting-tab[aria-selected="true"] { background: white; color: var(--navy); box-shadow: 0 1px 4px #003c7814; }
-.meeting-tab-count { display: inline-flex; align-items: center; justify-content: center; min-width: 23px; padding: 2px 6px; border-radius: 5px; background: #dfe9f1; font-size: 10px; font-variant-numeric: tabular-nums; }
-.meeting-tab[aria-selected="true"] .meeting-tab-count { background: #e5f7fc; color: #006581; }
-.meeting-tab:focus-visible,.meeting-tab-panel:focus-visible { outline: 2px solid #008eb3; outline-offset: 3px; border-radius: 6px; }
+.meeting-day-panel { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .meeting-list-actions .meetings-toggle { flex-shrink: 0; min-height: 40px; padding: 10px 15px; font-size: 12px; }
 .meetings-toggle > svg { transform: rotate(90deg); }
 .meetings-toggle[aria-expanded="true"] > svg { transform: rotate(-90deg); }
@@ -572,3 +565,14 @@ h2 { font-size: 19px; }
   .participant { flex-wrap: wrap; }
   .participant > .pill { margin-left: 39px; }
 }
+
+/* Indicador do dia: total de reuniões e quantas ainda vão acontecer. */
+.day-indicator { display: flex; flex-shrink: 0; flex-wrap: wrap; gap: 8px; }
+.day-stat { display: inline-flex; align-items: baseline; gap: 7px; padding: 7px 13px; border-radius: 8px; background: #edf3f7; color: var(--navy); }
+.day-stat strong { font-size: 20px; font-weight: 600; line-height: 1; }
+.day-stat small { font-size: 11px; color: var(--muted); }
+.day-stat.upcoming { background: #e5f7fc; }
+.day-stat.upcoming strong { color: #006581; }
+.day-stat.live { background: #eaf6d9; }
+.day-stat.live strong { color: #4f7a12; }
+.day-stat.live::before { content: ''; align-self: center; width: 8px; height: 8px; border-radius: 50%; background: var(--green); }
