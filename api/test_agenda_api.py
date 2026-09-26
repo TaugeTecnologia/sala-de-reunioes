@@ -50,7 +50,7 @@ class TestApiAgenda(unittest.TestCase):
         self.assertEqual(creds.client_secret, "segredo-de-teste")
         self.assertEqual(creds.scopes, [api_agenda.coletor.ESCOPO_EVENTOS])
 
-    def test_buscar_agenda_retorna_formato_eventos_das_salas_v2(self):
+    def test_buscar_agenda_retorna_o_formato_que_o_painel_espera(self):
         evento = {
             "id": "abc", "iCalUID": "abc@google.com", "summary": "Reunião de teste",
             "start": {"dateTime": "2026-09-25T14:00:00-03:00"}, "end": {"dateTime": "2026-09-25T15:00:00-03:00"},
@@ -60,10 +60,16 @@ class TestApiAgenda(unittest.TestCase):
         with patch.object(api_agenda, "AuthorizedSession", return_value=sessao_com_eventos([evento])), \
              patch.object(api_agenda, "_credenciais", return_value=Mock()):
             resultado = api_agenda.buscar_agenda(2026, 9)
-        self.assertEqual(resultado["formato"], "eventos_das_salas_v2")
-        self.assertEqual(resultado["ano"], 2026)
-        self.assertEqual(len(resultado["gestao_sala"]["eventos_na_sala"]), 1)
-        self.assertEqual(resultado["gestao_sala"]["eventos_na_sala"][0]["nome"], "Reunião de teste")
+        # Formato que o painel espera (mesmo de serializeReport em server/app.mjs).
+        self.assertEqual(resultado["periodo"]["ano"], 2026)
+        self.assertEqual(resultado["periodo"]["mes"], 9)
+        self.assertEqual(resultado["arquivo"], "agenda-2026-09-atual.json")
+        self.assertTrue(resultado["coletaFinalizada"])
+        self.assertEqual(len(resultado["salas"]), 1)
+        self.assertEqual(len(resultado["eventos"]), 1)
+        self.assertEqual(resultado["eventos"][0]["nome"], "Reunião de teste")
+        self.assertNotIn("gestao_sala", resultado)
+        self.assertNotIn("agendas", resultado)
 
     def test_agenda_com_erro_de_consulta_lanca_erro_agenda(self):
         sessao = Mock()
@@ -74,6 +80,22 @@ class TestApiAgenda(unittest.TestCase):
              patch.object(api_agenda, "_credenciais", return_value=Mock()):
             with self.assertRaises(api_agenda.coletor.ErroAgenda):
                 api_agenda.buscar_agenda(2026, 9)
+
+    def test_serializacao_filtra_campos_e_deduplica_avisos(self):
+        serializar = api_agenda.serializar_relatorio
+        bruto = {
+            "ano": 2026, "mes": 9, "gerado_em": "2026-09-26T10:00:00+00:00", "coleta_finalizada": True,
+            "time_min": "2026-09-01T00:00:00-03:00", "time_max": "2026-10-01T00:00:00-03:00",
+            "agendas": [{"email": "sala@x", "nome": "Sala", "status": "acesso_limitado", "eventos": [{"segredo": 1}]}],
+            "emails_vinculados": ["b@x", "a@x", "a@x", ""],
+            "gestao_sala": {"eventos_na_sala": [{"nome": "E", "avisos": ["aviso 1", "aviso 1"], "campo_interno": "x"}]},
+        }
+        saida = serializar(bruto, "agenda-2026-09-atual.json")
+        self.assertEqual(saida["emailsVinculados"], ["a@x", "b@x"])
+        self.assertEqual(saida["eventos"], [{"nome": "E", "avisos": ["aviso 1", "aviso 1"]}])
+        self.assertEqual(saida["avisos"], ["O Google pode ocultar detalhes de eventos privados.", "aviso 1"])
+        self.assertEqual(saida["salas"][0]["id"], "sala@x")
+        self.assertNotIn("eventos", saida["salas"][0])
 
     def test_read_session_reaproveitado_de_api_lib(self):
         # Confere que api/agenda.py carregou a mesma verificação usada nos outros testes.

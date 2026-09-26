@@ -20,6 +20,7 @@ def _carregar_modulo(nome, caminho):
 
 _AQUI = os.path.dirname(__file__)
 read_session = _carregar_modulo("sessao_auth", os.path.join(_AQUI, "_lib", "session.py")).read_session
+serializar_relatorio = _carregar_modulo("serializacao_painel", os.path.join(_AQUI, "_lib", "serialize.py")).serializar_relatorio
 _COLLECTOR_PATH = os.path.join(os.path.dirname(__file__), "..", "coletor", "trazer-agenda.py")
 coletor = _carregar_modulo("coletor_agenda", _COLLECTOR_PATH)
 
@@ -61,7 +62,8 @@ def buscar_agenda(ano, mes):
         raise coletor.ErroAgenda(erros[0].get("erro") or "Falha na consulta ao Google Calendar.")
     relatorio["coleta_finalizada"] = True
     gestao = coletor.analisar_salas(relatorio, None)
-    return coletor.exportacao_da_sala(relatorio, gestao)
+    bruto = coletor.exportacao_da_sala(relatorio, gestao)
+    return serializar_relatorio(bruto, f"{coletor.prefixo_exportacao(ano, mes)}-atual.json")
 
 
 class handler(BaseHTTPRequestHandler):
