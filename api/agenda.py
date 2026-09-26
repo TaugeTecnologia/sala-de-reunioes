@@ -1,6 +1,6 @@
 """Busca a agenda da sala direto do Google Calendar a cada chamada (sem processo contínuo,
 sem arquivo de token: credenciais vêm de variáveis de ambiente). Reaproveita as funções já
-testadas de coletor/trazer-agenda-de-setembro.py — só a obtenção das credenciais muda."""
+testadas de coletor/trazer-agenda.py — só a obtenção das credenciais muda."""
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 import datetime
@@ -20,7 +20,7 @@ def _carregar_modulo(nome, caminho):
 
 _AQUI = os.path.dirname(__file__)
 read_session = _carregar_modulo("sessao_auth", os.path.join(_AQUI, "_lib", "session.py")).read_session
-_COLLECTOR_PATH = os.path.join(os.path.dirname(__file__), "..", "coletor", "trazer-agenda-de-setembro.py")
+_COLLECTOR_PATH = os.path.join(os.path.dirname(__file__), "..", "coletor", "trazer-agenda.py")
 coletor = _carregar_modulo("coletor_agenda", _COLLECTOR_PATH)
 
 

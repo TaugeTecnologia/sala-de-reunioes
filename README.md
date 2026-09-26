@@ -43,7 +43,7 @@ endereço fixo desde o primeiro deploy.
 - **Front** (`src/`): estático, publicado em https://taugetecnologia.github.io/sala-de-reunioes/.
 - **Backend** (`api/`): funções sem estado no Vercel — `api/auth/*.js` (Node, login/sessão) e
   `api/agenda.py` (Python, busca a agenda direto do Google Calendar a cada chamada, reaproveitando
-  `coletor/trazer-agenda-de-setembro.py`). Sem processo contínuo e sem arquivo de token: a
+  `coletor/trazer-agenda.py`). Sem processo contínuo e sem arquivo de token: a
   credencial do Google vem de variáveis de ambiente. Por isso o painel usa consulta periódica
   (a cada 5 s) em vez de atualização por streaming — o Vercel não sustenta uma conexão longa.
 
@@ -61,10 +61,10 @@ endereço fixo desde o primeiro deploy.
    | `ALLOWED_ORIGIN` | `https://taugetecnologia.github.io` |
    | `GOOGLE_OAUTH_CLIENT_ID` | ID do cliente OAuth (tipo Área de trabalho) usado com `--autorizar` |
    | `GOOGLE_OAUTH_CLIENT_SECRET` | segredo desse mesmo cliente |
-   | `GOOGLE_REFRESH_TOKEN` | campo `refresh_token` de `coletor/token-agenda-setembro.json` |
+   | `GOOGLE_REFRESH_TOKEN` | campo `refresh_token` de `coletor/token.json` |
 
-   As três últimas vêm do arquivo gerado por `python trazer-agenda-de-setembro.py --autorizar`
-   (veja `coletor/README-agenda-setembro.md`). Nenhuma delas é commitada — ficam só no Vercel.
+   As três últimas vêm do arquivo gerado por `python trazer-agenda.py --autorizar`
+   (veja `coletor/README.md`). Nenhuma delas é commitada — ficam só no Vercel.
 3. Deploy. O projeto ganha um endereço fixo, tipo `https://sala-de-reunioes-api.vercel.app`, que
    **não muda** em novos deploys. Dá para colocar um domínio próprio depois (Settings → Domains).
 4. Publique o front apontando para esse endereço:
@@ -81,7 +81,7 @@ endereço do backend mudar.
 
 ```bash
 npm test                                   # funções Node (server/ e api/_lib usados por elas)
-python3 -m unittest coletor.test_agenda_setembro api.test_agenda_api   # coletor + api/agenda.py
+python3 -m unittest coletor.test_trazer_agenda api.test_agenda_api   # coletor + api/agenda.py
 ```
 
 Os testes de `api/agenda.py` simulam a resposta do Google (sem rede nem credenciais reais).
@@ -242,7 +242,7 @@ A atualização automática usa o token existente. Se precisar renovar a autoriz
 faça isso no terminal, na pasta do coletor:
 
 ```bash
-python .\trazer-agenda-de-setembro.py --autorizar --ano 2026
+python .\trazer-agenda.py --autorizar --ano 2026
 ```
 
 Credenciais e tokens ficam no coletor; não são enviados ao navegador nem incluídos
@@ -302,7 +302,7 @@ aparecem como não informados; os avisos de acesso limitado permanecem visíveis
 
 ```text
 .
-├── coletor/                Coletor Python da agenda (ver coletor/README-agenda-setembro.md)
+├── coletor/                Coletor Python da agenda (ver coletor/README.md)
 ├── src/App.jsx             Telas, navegação e detalhes das reuniões
 ├── src/styles.css          Visual responsivo
 ├── src/lib/agenda.js       Datas, filtros, calendário e métricas

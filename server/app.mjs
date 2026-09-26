@@ -121,7 +121,7 @@ export function createSyncController({ spawnProcess = spawn, load = (year, month
     run.started = new Date().toISOString();
     publish({ ...idle(run.year, run.month), estado: 'executando', mensagem: `Consultando a agenda da sala em ${String(run.month).padStart(2, '0')}/${run.year}…`, iniciadoEm: run.started });
     try {
-      run.child = spawnProcess(python, ['-X', 'utf8', path.join(collectorDir, 'trazer-agenda-de-setembro.py'), '--painel', '--mes', String(run.month), '--ano', String(run.year)], {
+      run.child = spawnProcess(python, ['-X', 'utf8', path.join(collectorDir, 'trazer-agenda.py'), '--painel', '--mes', String(run.month), '--ano', String(run.year)], {
         cwd: collectorDir, shell: false, windowsHide: true, stdio: ['ignore', 'ignore', 'ignore'],
       });
     } catch {

@@ -13,8 +13,8 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 
-SCRIPT = Path(__file__).with_name("trazer-agenda-de-setembro.py")
-SPEC = importlib.util.spec_from_file_location("agenda_setembro", SCRIPT)
+SCRIPT = Path(__file__).with_name("trazer-agenda.py")
+SPEC = importlib.util.spec_from_file_location("trazer_agenda", SCRIPT)
 agenda = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(agenda)
 

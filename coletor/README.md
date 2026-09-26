@@ -10,7 +10,7 @@ Na pasta do script:
 
 ```powershell
 python -m pip install -r requirements.txt
-python .\trazer-agenda-de-setembro.py --ano 2027 --mes 1
+python .\trazer-agenda.py --ano 2027 --mes 1
 ```
 
 A sala padrão já está configurada em `SALA_PADRAO`, com o ID identificado no Calendar:
@@ -22,7 +22,7 @@ c_1889c407qaa76h6vjchtl29n5u27e@resource.calendar.google.com
 Para consultar outra sala, informe o e-mail/ID de sua agenda; pode repetir `--sala`:
 
 ```powershell
-python .\trazer-agenda-de-setembro.py --ano 2027 --mes 1 --sala "email-da-sala@resource.calendar.google.com"
+python .\trazer-agenda.py --ano 2027 --mes 1 --sala "email-da-sala@resource.calendar.google.com"
 ```
 
 O nome completo da sala padrão e os nomes "sala de reunião"/"sala de reuniões"
@@ -31,7 +31,7 @@ Directory nem volta a consultar as agendas dos funcionários.
 
 ## Autorização
 
-O token existente `token-agenda-setembro.json` continua funcionando. Tokens e
+O token existente `token.json` continua funcionando. Tokens e
 credenciais padrão são localizados ao lado do script; caminhos informados nas
 opções são relativos ao terminal. Para escolher um token, use `--token`.
 
@@ -46,7 +46,7 @@ https://www.googleapis.com/auth/calendar.events.readonly
 Quando precisar autorizar novamente:
 
 ```powershell
-python .\trazer-agenda-de-setembro.py --autorizar --ano 2027 --mes 1
+python .\trazer-agenda.py --autorizar --ano 2027 --mes 1
 ```
 
 O script encontra `client_secret*.json`, abre o login e salva o token. Se houver
@@ -57,7 +57,7 @@ Renovações de tokens expirados não acrescentam permissões.
 Para service account com delegação de domínio:
 
 ```powershell
-python .\trazer-agenda-de-setembro.py --ano 2027 --mes 1 --conta-servico .\conta-servico.json --admin <e-mail-do-administrador>
+python .\trazer-agenda.py --ano 2027 --mes 1 --conta-servico .\conta-servico.json --admin <e-mail-do-administrador>
 ```
 
 O cliente da service account precisa ter o escopo Calendar autorizado na delegação
@@ -126,7 +126,7 @@ consultas enquanto houver uma aba conectada. Você também pode testar uma colet
 única nesse formato:
 
 ```powershell
-python .\trazer-agenda-de-setembro.py --ano 2027 --mes 1 --painel
+python .\trazer-agenda.py --ano 2027 --mes 1 --painel
 ```
 
 Esse modo atualiza somente `exportacoes/agenda-AAAA-MM-atual.json`, no mesmo
@@ -142,7 +142,7 @@ O painel recebe os resultados automaticamente; não é necessário executar o sc
 ## Reprocessar um arquivo existente
 
 ```powershell
-python .\trazer-agenda-de-setembro.py --reprocessar ".\exportacoes\agenda-setembro-2026-20260922T175621433700Z.json"
+python .\trazer-agenda.py --reprocessar ".\exportacoes\agenda-setembro-2026-20260922T175621433700Z.json"
 ```
 
 Aceita os JSONs antigos com `usuarios` e os novos com `agendas`. Gera outro JSON
@@ -155,7 +155,7 @@ campos disponíveis; o ano é o registrado no arquivo.
 ## Testes offline
 
 ```powershell
-python -m unittest -v test_agenda_setembro.py
+python -m unittest -v test_trazer_agenda.py
 ```
 
 Os testes não leem credenciais nem chamam APIs reais.
@@ -172,8 +172,8 @@ Os testes não leem credenciais nem chamam APIs reais.
 O nome do script foi preservado para manter os comandos existentes. Use `--mes` de 1 a 12 e `--ano` de 1 a 9998. Exemplos:
 
 ```powershell
-python .\trazer-agenda-de-setembro.py --ano 2027 --mes 12
-python .\trazer-agenda-de-setembro.py --ano 2028 --mes 2
+python .\trazer-agenda.py --ano 2027 --mes 12
+python .\trazer-agenda.py --ano 2028 --mes 2
 ```
 
 Dezembro termina em 1º de janeiro do ano seguinte; fevereiro respeita anos bissextos. Cada consulta gera arquivos separados `agenda-AAAA-MM-<identificador>.json` ou, com `--painel`, `agenda-AAAA-MM-atual.json`. A autorização e os IDs das salas permanecem os mesmos.

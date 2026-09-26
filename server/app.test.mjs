@@ -59,7 +59,7 @@ test('seleciona última coleta concluída acessível e ignora coleta interrompid
   await writeReport(directory, '20260922T200000000000', report({ gerado_em: '2026-09-22T20:00:00Z', coleta_finalizada: false }));
   await writeReport(directory, '20260922T210000000000', report({ gerado_em: '2026-09-22T21:00:00Z', origem_coleta: 'todos_os_usuarios' }));
   await writeFile(path.join(directory, 'agenda-setembro-2026-20260922T220000000000Z.json'), '{interrompido');
-  await writeFile(path.join(directory, 'token-agenda-setembro.json'), JSON.stringify(report({ gerado_em: '2027-01-01T00:00:00Z' })));
+  await writeFile(path.join(directory, 'token.json'), JSON.stringify(report({ gerado_em: '2027-01-01T00:00:00Z' })));
   const agenda = await loadAgenda(2026, directory, 9);
   assert.equal(agenda.arquivo, selected);
   assert.equal(agenda.eventos.length, 1);

@@ -1,8 +1,8 @@
 """Exporta qualquer mês e ano diretamente das agendas das salas de reunião.
 
-Uso: python trazer-agenda-de-setembro.py --ano 2027 --mes 1
-Nova autorização: python trazer-agenda-de-setembro.py --autorizar --ano 2026
-Veja README-agenda-setembro.md para permissões e delegação de domínio.
+Uso: python trazer-agenda.py --ano 2027 --mes 1
+Nova autorização: python trazer-agenda.py --autorizar --ano 2026
+Veja README.md (nesta pasta) para permissões e delegação de domínio.
 """
 
 import argparse
@@ -33,7 +33,7 @@ ESCOPOS = [ESCOPO_EVENTOS]
 FUSO = timezone(timedelta(hours=-3))
 URL_USUARIOS = "https://admin.googleapis.com/admin/directory/v1/users"
 URL_CALENDAR = "https://www.googleapis.com/calendar/v3/calendars"
-TOKEN_NOVO = PASTA / "token-agenda-setembro.json"
+TOKEN_NOVO = PASTA / "token.json"
 SALA_PADRAO = {
     "email": "c_1889c407qaa76h6vjchtl29n5u27e@resource.calendar.google.com",
     "nome": "TAUGE CENTRAL-9-Sala de reuniões (8)",
@@ -67,7 +67,7 @@ def argumentos():
     if bool(args.conta_servico) != bool(args.admin):
         parser.error("Use --conta-servico e --admin juntos.")
     if args.autorizar and args.token:
-        parser.error("--autorizar sempre salva em token-agenda-setembro.json; não use --token junto.")
+        parser.error("--autorizar sempre salva em token.json; não use --token junto.")
     if args.client_secret and not args.autorizar:
         parser.error("--client-secret exige --autorizar.")
     if args.sala and any(not valor.strip() for valor in args.sala):
@@ -149,7 +149,7 @@ def carregar_credenciais(args):
         TOKEN_NOVO.write_text(creds.to_json(), encoding="utf-8")
         print(f"Autorização salva em {TOKEN_NOVO.name}.")
     else:
-        caminho = args.token or (TOKEN_NOVO if TOKEN_NOVO.is_file() else PASTA / "token.json")
+        caminho = args.token or TOKEN_NOVO
         if not caminho.is_file():
             raise ErroAgenda("Token não encontrado. Execute com --autorizar ou informe --token.")
         creds = Credentials.from_authorized_user_file(str(caminho))

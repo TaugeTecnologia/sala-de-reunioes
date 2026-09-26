@@ -1,6 +1,6 @@
 """Testes offline de api/agenda.py: garante que a função do Vercel monta as credenciais
 certas e devolve o JSON no formato eventos_das_salas_v2, sem tocar a rede nem reimplementar
-a lógica de coletor/trazer-agenda-de-setembro.py (só a integração é testada aqui)."""
+a lógica de coletor/trazer-agenda.py (só a integração é testada aqui)."""
 import importlib.util
 import os
 import unittest
