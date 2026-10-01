@@ -13,7 +13,7 @@ function report(overrides = {}) {
     gerado_em: '2026-09-22T19:03:08.961983+00:00', formato: 'eventos_das_salas_v2', origem_coleta: 'agendas_das_salas', coleta_finalizada: true,
     agendas: [{ email: 'sala@resource.calendar.google.com', nome: 'Sala de reuniões', status: 'acesso_limitado', aviso: 'A API pode ocultar detalhes privados.', eventos: [{ secretRaw: 'not-for-api' }] }],
     emails_vinculados: ['pessoa@empresa.com'],
-    gestao_sala: { eventos_na_sala: [{ id_evento: 'abc', nome: 'Projeto', inicio: '2026-09-22T14:00:00-03:00', fim: '2026-09-22T15:00:00-03:00', participantes: { pessoas_convidadas: 2, aceites_observados: 1, lista: [{ email: 'pessoa@empresa.com', resposta: 'accepted' }] }, avisos: [] }], fora_do_filtro: [{ nome: 'Não compartilhar' }] },
+    gestao_sala: { eventos_na_sala: [{ id_evento: 'abc', nome: 'Projeto', inicio: '2026-09-22T14:00:00-03:00', fim: '2026-09-22T15:00:00-03:00', participantes: { pessoas_convidadas: 2, aceites_observados: 1, lista: [{ nome: 'Pessoa Teste', email: 'pessoa@empresa.com', convidados_adicionais: 1, resposta: 'accepted', opcional: true }] }, salas: [{ email: 'sala@resource.calendar.google.com', resposta: 'accepted' }], avisos: [] }], fora_do_filtro: [{ nome: 'Não compartilhar' }] },
     credentials: { access_token: 'never-expose' }, ...overrides,
   };
 }
@@ -43,14 +43,16 @@ test('valida ano sem aceitar caminhos, objetos, frações ou arrays', () => {
   }
 });
 
-test('serializa apenas o contrato público, preservando participantes e avisos de acesso', () => {
+test('preserva a lista de convidados sem expor respostas individuais', () => {
   const serialized = serializeReport(report(), 'agenda-setembro-2026-20260922T190308961952Z.json');
-  assert.equal(serialized.eventos[0].participantes.aceites_observados, 1);
+  assert.deepEqual(serialized.eventos[0].participantes, { pessoas_convidadas: 2, lista: [{ nome: 'Pessoa Teste', email: 'pessoa@empresa.com', convidados_adicionais: 1 }] });
+  assert.equal(serialized.eventos[0].salas[0].resposta, 'accepted');
+  assert.equal(Object.hasOwn(serialized, 'emailsVinculados'), false);
   assert.equal(serialized.salas[0].status, 'acesso_limitado');
   assert.deepEqual(serialized.avisos, ['A API pode ocultar detalhes privados.']);
   assert.equal(serialized.coletaFinalizada, true);
   assert.equal(serialized.periodo.fim, '2026-10-01T00:00:00-03:00');
-  assert.doesNotMatch(JSON.stringify(serialized), /never-expose|secretRaw|Não compartilhar|access_token/);
+  assert.doesNotMatch(JSON.stringify(serialized), /never-expose|secretRaw|Não compartilhar|access_token|aceites_observados|"opcional":true/);
 });
 
 test('seleciona última coleta concluída acessível e ignora coleta interrompida e antiga geral', async (t) => {
@@ -97,7 +99,7 @@ test('snapshot atual mais recente substitui o arquivo antigo mesmo quando a últ
   const result = await loadAgenda(2026, directory, 9);
   assert.equal(result.arquivo, 'agenda-setembro-2026-atual.json');
   assert.deepEqual(result.eventos, []);
-  assert.deepEqual(result.emailsVinculados, []);
+  assert.equal(Object.hasOwn(result, 'emailsVinculados'), false);
 });
 
 function fakeProcess() {

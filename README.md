@@ -191,8 +191,10 @@ Dados que ficam no servidor (fora do Git): `.env` e, em `coletor/`, o token do G
   Abrir ou recolher posiciona a rolagem perto da hora atual.
   A rolagem manual permanece livre durante as atualizações. **Exibir tudo** mostra
   o dia completo. O card da sala é apenas informativo, sem botão de navegação.
-- **Detalhes do evento:** início/fim, criador, organizador, descrição, convidados,
-  respostas ao convite, acompanhantes e situação da reserva.
+- **Detalhes do evento:** início/fim, criador, organizador, descrição, lista de
+  convidados e situação da reserva. Nomes e e-mails aparecem sem as respostas
+  individuais aos convites. O botão **Abrir Google Agenda** abre a agenda
+  da própria conta em uma nova aba.
 
 Não há aba, botão ou formulário de criação de reservas. A ilustração da sala é
 decorativa; não representa uma planta real nem informa capacidade.
@@ -293,10 +295,9 @@ As horas representam a união dos intervalos confirmados por sala dentro do mês
 evitando somar horários sobrepostos em duplicidade. Não são uma taxa de ocupação
 nem prova de uso físico do espaço.
 
-Convidados únicos são e-mails identificados na lista de participantes, excluindo
-recursos. A página de pessoas também inclui criadores e organizadores. Convidados
-adicionais anônimos são detalhados na reunião, mas não viram contatos individuais.
-Aceites não comprovam comparecimento presencial. Campos que o Google omitiu
+O painel mostra a lista de convidados e o total informado pelo Google. As respostas
+individuais e as contagens de aceites e recusas ficam fora da resposta da API; a resposta da
+sala continua disponível para determinar a reserva. Campos que o Google omitiu
 aparecem como não informados; os avisos de acesso limitado permanecem visíveis.
 
 ## Estrutura

@@ -5,5 +5,6 @@ import './styles.css';
 import './tauge.css';
 import './meeting-views.css';
 import './login.css';
+import './responsive.css';
 
 createRoot(document.getElementById('root')).render(<React.StrictMode><Root /></React.StrictMode>);

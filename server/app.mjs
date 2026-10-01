@@ -11,6 +11,16 @@ export const COLLECTOR_DIR = path.resolve(PROJECT_DIR, 'coletor');
 export const EXPORT_DIR = path.join(COLLECTOR_DIR, 'exportacoes');
 const LOCAL_ORIGINS = new Set(['http://127.0.0.1:8787', 'http://localhost:8787', 'http://127.0.0.1:5175', 'http://localhost:5175']);
 const EVENT_FIELDS = ['chave', 'ical_uid', 'id_evento', 'nome', 'data', 'inicio', 'fim', 'inicio_legivel', 'fim_legivel', 'dia_inteiro', 'fim_exclusivo', 'duracao_minutos', 'criador', 'organizador', 'local', 'salas', 'participantes', 'descricao', 'tem_conferencia_online', 'modalidade', 'classificacao', 'motivo', 'bloqueio_confirmado', 'agenda_copia_utilizada', 'copias_encontradas', 'agendas_origem', 'avisos'];
+const PUBLIC_PARTICIPANT_FIELDS = ['pessoas_convidadas', 'lista_possivelmente_incompleta'];
+const PUBLIC_GUEST_FIELDS = ['nome', 'email', 'convidados_adicionais'];
+
+function publicParticipants(value) {
+  const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const result = Object.fromEntries(PUBLIC_PARTICIPANT_FIELDS.filter((key) => Object.hasOwn(source, key)).map((key) => [key, source[key]]));
+  if (Array.isArray(source.lista)) result.lista = source.lista.filter((person) => person && typeof person === 'object' && !Array.isArray(person)).map((person) =>
+    Object.fromEntries(PUBLIC_GUEST_FIELDS.filter((key) => Object.hasOwn(person, key)).map((key) => [key, person[key]])));
+  return result;
+}
 
 import { HttpError } from './http-error.mjs';
 export { HttpError };
@@ -40,7 +50,9 @@ export function serializeReport(report, filename, extraWarnings = []) {
     aviso: room.aviso || room.erro || (room.status === 'acesso_limitado' ? 'O Google pode ocultar detalhes de eventos privados.' : null),
   }));
   const events = array(report.gestao_sala?.eventos_na_sala).map((event) => Object.fromEntries(
-    EVENT_FIELDS.filter((field) => Object.hasOwn(event, field)).map((field) => [field, event[field]]),
+    EVENT_FIELDS.filter((field) => Object.hasOwn(event, field)).map((field) => [field, field === 'participantes'
+      ? publicParticipants(event.participantes)
+      : event[field]]),
   ));
   return {
     arquivo: path.basename(filename),
@@ -48,7 +60,6 @@ export function serializeReport(report, filename, extraWarnings = []) {
     periodo: { ano: report.ano, mes: report.mes, inicio: report.time_min || null, fim: report.time_max || null, fuso: report.fuso || 'UTC-03:00' },
     salas: rooms,
     eventos: events,
-    emailsVinculados: unique(array(report.emails_vinculados)).sort(),
     avisos: unique([...extraWarnings, report.observacao, ...rooms.map((room) => room.aviso), ...events.flatMap((event) => array(event.avisos))]),
     coletaFinalizada: report.coleta_finalizada === true,
   };

@@ -88,11 +88,22 @@ class TestApiAgenda(unittest.TestCase):
             "time_min": "2026-09-01T00:00:00-03:00", "time_max": "2026-10-01T00:00:00-03:00",
             "agendas": [{"email": "sala@x", "nome": "Sala", "status": "acesso_limitado", "eventos": [{"segredo": 1}]}],
             "emails_vinculados": ["b@x", "a@x", "a@x", ""],
-            "gestao_sala": {"eventos_na_sala": [{"nome": "E", "avisos": ["aviso 1", "aviso 1"], "campo_interno": "x"}]},
+            "gestao_sala": {"eventos_na_sala": [{"nome": "E", "avisos": ["aviso 1", "aviso 1"], "campo_interno": "x",
+                                                  "salas": [{"email": "sala@x", "resposta": "accepted"}],
+                                                  "participantes": {"pessoas_convidadas": 2, "aceites_observados": 1,
+                                                                    "lista": [{"nome": "Pessoa Teste", "email": "a@x",
+                                                                               "convidados_adicionais": 1, "resposta": "accepted",
+                                                                               "opcional": True}]}}]},
         }
         saida = serializar(bruto, "agenda-2026-09-atual.json")
-        self.assertEqual(saida["emailsVinculados"], ["a@x", "b@x"])
-        self.assertEqual(saida["eventos"], [{"nome": "E", "avisos": ["aviso 1", "aviso 1"]}])
+        self.assertNotIn("emailsVinculados", saida)
+        self.assertEqual(saida["eventos"], [{"nome": "E", "avisos": ["aviso 1", "aviso 1"],
+                                              "salas": [{"email": "sala@x", "resposta": "accepted"}],
+                                              "participantes": {"pessoas_convidadas": 2,
+                                                                "lista": [{"nome": "Pessoa Teste", "email": "a@x",
+                                                                           "convidados_adicionais": 1}]}}])
+        self.assertNotIn("b@x", str(saida))
+        self.assertNotIn("resposta", str(saida["eventos"][0]["participantes"]))
         self.assertEqual(saida["avisos"], ["O Google pode ocultar detalhes de eventos privados.", "aviso 1"])
         self.assertEqual(saida["salas"][0]["id"], "sala@x")
         self.assertNotIn("eventos", saida["salas"][0])

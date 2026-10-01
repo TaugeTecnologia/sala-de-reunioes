@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
-import { eventStatus, filterEvents, formatDate, formatDuration, formatTime, roomAvailability, nextRoomMeeting, dayIndicator, todaysMeetings } from './lib/agenda.js';
+import { eventStatus, filterEvents, formatDate, formatDuration, formatTime, roomAvailability, nextRoomMeeting, dayIndicator, todaysMeetings, orderMeetings } from './lib/agenda.js';
 import { meetingTimeline, isOffDefaultInterval } from './lib/meeting-timeline.js';
 import { currentWeek, weeklyCalendar } from './lib/week.js';
 import { maskDateInput, parseDateInput, dateInputCaret, findAgendaFocus, agendaResultWeeks, resultWeekNavigation } from './lib/agenda-filters.js';
@@ -9,7 +9,6 @@ import { watchClock } from './lib/clock.js';
 
 const NAV = [{ id: 'visao-geral', label: 'Visão do dia', icon: 'grid' }, { id: 'agenda', label: 'Agenda', icon: 'calendar' }];
 const PAGES = NAV.map(item => item.id);
-const ANSWERS = { accepted: ['Aceitou', 'green'], declined: ['Recusou', 'red'], tentative: ['Talvez', 'warning'], needsAction: ['Sem resposta', 'neutral'] };
 const EMPTY_FILTERS = { busca: '', data: '', sala: '', status: 'todos' };
 const CALENDAR_HOUR_HEIGHT = 56;
 const CALENDAR_HOURS = Array.from({ length: 24 }, (_, hour) => hour);
@@ -78,7 +77,7 @@ function MeetingFields({ event, status, showTime }) {
   const participants = event.participantes || {};
   const guests = (participants.lista || []).filter(Boolean).map(person => `${personName(person)}${person.convidados_adicionais > 0 ? ` (+${person.convidados_adicionais})` : ''}`);
   const summary = guests.length ? `${guests.slice(0, 2).join(', ')}${guests.length > 2 ? ` +${guests.length - 2}` : ''}` : participants.pessoas_convidadas === 0 ? 'Sem convidados' : 'Não informados';
-  const count = Number.isFinite(participants.pessoas_convidadas) ? `${participants.pessoas_convidadas} ${participants.pessoas_convidadas === 1 ? 'convidado' : 'convidados'}` : 'Convidados';
+  const count = Number.isFinite(participants.pessoas_convidadas) ? `${participants.pessoas_convidadas} ${participants.pessoas_convidadas === 1 ? 'convidado' : 'convidados'}` : 'Convidados não informados';
   return <div className="meeting-content-grid">
     <span className="meeting-title-cell"><strong>{event.nome}</strong>{showTime && <MeetingTime event={event}/>}</span>
     <span className="meeting-organizer-cell" title={event.organizador?.email || personName(event.organizador || {})}>{personName(event.organizador || {})}</span>
@@ -128,7 +127,9 @@ function ScrollableMeetings({ events, dayEvents, open, now }) {
   const [expanded, setExpanded] = useState(false);
   const viewport = useRef(null);
   const listId = useId();
+  const mobileListId = useId();
   const layout = meetingTimeline(events, now, dayEvents);
+  const mobileEvents = orderMeetings(events, now);
   const dayStart = layout.dayStart;
   const previousScroll = useRef(null);
 
@@ -169,9 +170,15 @@ function ScrollableMeetings({ events, dayEvents, open, now }) {
     <div id={listId} ref={viewport} className={`meeting-list-viewport meetings-view-viewport ${expanded ? 'is-expanded' : 'is-limited'}`} role="region" aria-label={`Agenda com horários de referência a cada ${layout.intervalMinutes} minutos das reuniões de hoje`} tabIndex={0} onScroll={event => { if (previousScroll.current) previousScroll.current.scrollTop = event.currentTarget.scrollTop; }}>
       <MeetingAgenda layout={layout} open={open} now={now}/>
     </div>
-    <div className="meeting-list-actions">
-      <span>{layout.laneCount > 1 ? 'Reuniões simultâneas lado a lado · Deslize também na horizontal.' : expanded ? `Dia completo · Horários a cada ${layout.intervalMinutes} min.` : `Horários a cada ${layout.intervalMinutes} min · Deslize para ver os horários.`}</span>
-      <button type="button" className="button secondary meetings-toggle" aria-expanded={expanded} aria-controls={listId} onClick={toggleExpanded}>{expanded ? 'Recolher lista' : 'Exibir tudo'}<Icon name="chevron" size={16}/></button>
+    <div id={mobileListId} className="mobile-meetings" role="region" aria-label="Reuniões de hoje">
+      {mobileEvents.length
+        ? mobileEvents.slice(0, expanded ? undefined : 4).map(event => <MeetingItem key={eventKey(event)} event={event} now={now} open={open}/>)
+        : <Empty title="Nenhuma reunião hoje">A agenda da sala está livre para hoje.</Empty>}
+    </div>
+    <div className={`meeting-list-actions${events.length <= 4 ? ' mobile-all-visible' : ''}${events.length === 0 ? ' mobile-no-meetings' : ''}`}>
+      <span className="desktop-meeting-hint">{layout.laneCount > 1 ? 'Reuniões simultâneas lado a lado · Deslize também na horizontal.' : expanded ? `Dia completo · Horários a cada ${layout.intervalMinutes} min.` : `Horários a cada ${layout.intervalMinutes} min · Deslize para ver os horários.`}</span>
+      {events.length > 0 && <span className="mobile-meeting-hint">{events.length > 4 && !expanded ? `Mostrando 4 de ${events.length} reuniões. ` : ''}Toque em uma reunião para ver os detalhes.</span>}
+      <button type="button" className="button secondary meetings-toggle" aria-expanded={expanded} aria-controls={`${listId} ${mobileListId}`} onClick={toggleExpanded}>{expanded ? 'Recolher lista' : 'Exibir tudo'}<Icon name="chevron" size={16}/></button>
     </div>
   </>;
 }
@@ -205,12 +212,22 @@ function MeetingsPanel({ data, open }) {
 
 function Calendar({ period, events, open, selectDate, selectedDate, selectedWeek, onWeekChange, focusKey = '', highlightMatches = false, resultNavigation = null, onResultWeekChange }) {
   const [now, setNow] = useState(Date.now);
+  const [mobileDay, setMobileDay] = useState('');
   const viewport = useRef(null);
   const calendarHeader = useRef(null);
   const lastFocus = useRef('');
   useEffect(() => watchClock(setNow), []);
+  useLayoutEffect(() => { setMobileDay(previous => previous ? '' : previous); }, [focusKey]);
   const actualWeek = currentWeek(now);
   const days = weeklyCalendar(events, period, now, selectedWeek ?? now, selectedDate);
+  const weekDays = weeklyCalendar(events, period, now, selectedDate || selectedWeek || now);
+  const dayChoices = selectedDate && !weekDays.some(day => day.date === selectedDate) ? [...weekDays, days[0]] : weekDays;
+  const mobileActiveDay = selectedDate
+    || (weekDays.some(day => day.date === mobileDay) && mobileDay)
+    || (highlightMatches && weekDays.find(day => day.allDay.length || day.timed.length)?.date)
+    || weekDays.find(day => day.today)?.date
+    || weekDays.find(day => day.covered)?.date
+    || weekDays[0].date;
   const weekStart = days[0].date;
   const weekEnd = days.at(-1).date;
   const today = actualWeek.find(day => day.today).date;
@@ -249,17 +266,34 @@ function Calendar({ period, events, open, selectDate, selectedDate, selectedWeek
     viewport.current.scrollTop = hasAllDayEvent ? 0 : Math.max(0, first.startMinute / 60 * CALENDAR_HOUR_HEIGHT - CALENDAR_HOUR_HEIGHT / 2);
     lastFocus.current = focusKey;
   }, [focusKey, days]);
+  useLayoutEffect(() => {
+    const node = viewport.current;
+    if (!node || !window.matchMedia('(max-width: 760px)').matches) return;
+    const activeDay = days.find(day => day.date === mobileActiveDay);
+    if (!activeDay) return;
+    if (activeDay.today && !highlightMatches) { showCurrentTime(); return; }
+    if (activeDay.allDay.length) { node.scrollTop = 0; return; }
+    const firstEvent = activeDay.timed[0];
+    node.scrollTop = (firstEvent ? Math.max(0, firstEvent.startMinute / 60 - 1) : 8) * CALENDAR_HOUR_HEIGHT;
+  }, [mobileActiveDay, weekStart]);
 
-  return <section className={`panel calendar-panel weekly-calendar${selectedDate ? ' day-calendar' : ''}`}>
+  return <section className={`panel calendar-panel weekly-calendar${selectedDate ? ' day-calendar' : ''}`} data-mobile-all-day={days.find(day => day.date === mobileActiveDay)?.allDay.length > 0}>
     <div className="panel-heading">
       <div aria-live="polite" aria-atomic="true"><h2>{selectedDate ? 'Dia selecionado' : resultNavigation?.index >= 0 ? `Semana ${resultNavigation.index + 1} de ${resultNavigation.total}` : isCurrentWeek ? 'Semana atual' : 'Semana selecionada'}</h2><p>{selectedDate ? formatDate(selectedDate, { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }) : <>{formatDate(weekStart, { day: '2-digit', month: '2-digit' })} — {formatDate(weekEnd)}</>}</p></div>
       <div className="week-toolbar">
         <span className="calendar-legend"><i/>{highlightMatches ? 'Resultado dos filtros' : 'Evento da sala'}</span>
         <div className="week-navigation" role="group" aria-label={resultNavigation ? 'Navegar pelas semanas com resultados dos filtros' : 'Navegar pelas semanas'}>
-          <button type="button" className="week-previous" disabled={Boolean(resultNavigation && !resultNavigation.previous)} aria-label={resultNavigation ? 'Semana anterior com resultados' : 'Semana anterior'} onClick={() => changeWeek(-1)}><Icon name="chevron" size={16}/>{resultNavigation ? 'Anterior' : 'Semana anterior'}</button>
-          <button type="button" disabled={Boolean(resultNavigation && !resultNavigation.next)} aria-label={resultNavigation ? 'Próxima semana com resultados' : 'Próxima semana'} onClick={() => changeWeek(1)}>{resultNavigation ? 'Próxima' : 'Próxima semana'}<Icon name="chevron" size={16}/></button>
+          <button type="button" className="week-previous" disabled={Boolean(resultNavigation && !resultNavigation.previous)} aria-label={resultNavigation ? 'Semana anterior com resultados' : 'Semana anterior'} onClick={() => changeWeek(-1)}><Icon name="chevron" size={16}/>{resultNavigation ? 'Anterior' : <><span className="week-nav-long">Semana anterior</span><span className="week-nav-short">Anterior</span></>}</button>
+          <button type="button" disabled={Boolean(resultNavigation && !resultNavigation.next)} aria-label={resultNavigation ? 'Próxima semana com resultados' : 'Próxima semana'} onClick={() => changeWeek(1)}>{resultNavigation ? 'Próxima' : <><span className="week-nav-long">Próxima semana</span><span className="week-nav-short">Próxima</span></>}<Icon name="chevron" size={16}/></button>
         </div>
       </div>
+    </div>
+    <div className="mobile-day-navigation" role="group" aria-label="Escolher o dia da agenda">
+      {dayChoices.map(day => <button type="button" key={day.date} className={day.date === mobileActiveDay ? 'is-active' : ''}
+        disabled={!day.covered} aria-current={day.today ? 'date' : undefined} aria-pressed={day.date === mobileActiveDay}
+        onClick={() => selectedDate ? selectDate(day.date) : setMobileDay(day.date)} aria-label={`Ver agenda de ${formatDate(day.date, { weekday: 'long', day: 'numeric', month: 'long' })}${!day.covered ? ', fora do período consultado' : ''}`}>
+        <span>{formatDate(day.date, { weekday: 'short' }).replace('.', '')}</span><strong>{formatDate(day.date, { day: '2-digit', month: '2-digit' })}</strong>
+      </button>)}
     </div>
     <div className="week-scroll" ref={viewport} role="region" aria-label={`Calendário ${selectedDate ? 'do dia selecionado' : 'semanal'}, com rolagem pelos horários`} tabIndex={0} style={{ '--week-hour-height': `${CALENDAR_HOUR_HEIGHT}px` }}>
       <div className="week-grid">
@@ -267,7 +301,7 @@ function Calendar({ period, events, open, selectDate, selectedDate, selectedWeek
           <div className="week-heading-row">
             <div className="week-corner">Horário</div>
             {days.map(day => <button type="button" key={day.date}
-              className={`week-day-heading ${day.today ? 'is-today' : ''} ${day.date === selectedDate ? 'is-selected' : ''}`}
+              className={`week-day-heading ${day.today ? 'is-today' : ''} ${day.date === selectedDate ? 'is-selected' : ''}${day.date === mobileActiveDay ? ' is-mobile-active' : ''}`}
               disabled={!day.covered} aria-current={day.today ? 'date' : undefined}
               aria-pressed={day.date === selectedDate}
               onClick={() => selectDate(day.date === selectedDate ? '' : day.date)} aria-label={`Filtrar agenda de ${formatDate(day.date, { weekday: 'long', day: 'numeric', month: 'long' })}${!day.covered ? ', fora do período consultado' : ''}`}
@@ -275,12 +309,12 @@ function Calendar({ period, events, open, selectDate, selectedDate, selectedWeek
           </div>
           {hasAllDay && <div className="week-all-day-row">
             <div className="week-corner">Dia inteiro</div>
-            {days.map(day => <div className="week-all-day-cell" key={day.date}>{day.allDay.map(event => <button type="button" className={`week-all-day-event${highlightMatches ? ' is-filter-match' : ''}`} key={eventKey(event)} onClick={() => open(event)} title={event.nome} aria-label={`${event.nome}, dia inteiro, ${formatDate(day.date)}. Ver detalhes.`}>{event.nome}</button>)}</div>)}
+            {days.map(day => <div className={`week-all-day-cell${day.date === mobileActiveDay ? ' is-mobile-active' : ''}`} key={day.date}>{day.allDay.map(event => <button type="button" className={`week-all-day-event${highlightMatches ? ' is-filter-match' : ''}`} key={eventKey(event)} onClick={() => open(event)} title={event.nome} aria-label={`${event.nome}, dia inteiro, ${formatDate(day.date)}. Ver detalhes.`}>{event.nome}</button>)}</div>)}
           </div>}
         </div>
         <div className="week-time-grid" style={{ height: 24 * CALENDAR_HOUR_HEIGHT }}>
           <div className="week-hours">{CALENDAR_HOURS.map(hour => <span className="week-hour" key={hour} style={{ top: hour * CALENDAR_HOUR_HEIGHT }}>{String(hour).padStart(2, '0')}:00</span>)}</div>
-          {days.map(day => <div className={`week-day-column ${day.today ? 'is-today' : ''}`} key={day.date} role="group" aria-label={formatDate(day.date, { weekday: 'long', day: 'numeric', month: 'long' })}>
+          {days.map(day => <div className={`week-day-column ${day.today ? 'is-today' : ''}${day.date === mobileActiveDay ? ' is-mobile-active' : ''}`} key={day.date} role="group" aria-label={formatDate(day.date, { weekday: 'long', day: 'numeric', month: 'long' })}>
             {day.timed.map(segment => {
               const event = segment.event;
               const status = eventStatus(event, now);
@@ -296,7 +330,7 @@ function Calendar({ period, events, open, selectDate, selectedDate, selectedWeek
         </div>
       </div>
     </div>
-    <div className="calendar-footer"><Icon name="info" size={15}/><span>Horários de Brasília · Clique em um evento para ver os detalhes.</span></div>
+    <div className="calendar-footer"><Icon name="info" size={15}/><span>Horários de Brasília · Selecione um evento para ver os detalhes.</span></div>
   </section>;
 }
 
@@ -465,9 +499,9 @@ function EventDetail({ event, close }) {
     <div className="detail-location"><Icon name="pin" size={18}/><span>{roomLabel(event.local) || event.salas?.map(s => roomLabel(s.nome) || s.email).join(', ') || 'Local não informado'}</span></div>
     {event.tem_conferencia_online && <div className="detail-location"><Icon name="video" size={18}/><span>Conferência online disponível no evento.</span></div>}
     <section className="detail-section"><h3>Sobre o encontro</h3><p className="description">{plainDescription(event.descricao) || 'Nenhuma descrição foi informada no Google Calendar.'}</p></section>
-    <section className="detail-section"><div className="panel-heading"><h3>Participantes <span className="count-badge">{p.pessoas_convidadas ?? '?'}</span></h3><span className="subtle">{p.aceites_observados ?? 0} aceites</span></div>
-      {p.lista?.length ? <div className="participants-list">{p.lista.map((person, i) => { const [label, tone] = ANSWERS[person.resposta] || ['Não informado', 'neutral']; return <div className="participant" key={person.email || i}><span className="avatar">{initials(person)}</span><div><strong>{personName(person)}</strong><small>{person.email}{person.convidados_adicionais > 0 && ` · +${person.convidados_adicionais} acompanhantes`}</small></div><Pill tone={tone}>{label}</Pill></div>; })}</div> : <p className="subtle">A lista de convidados não foi informada.</p>}
-      <p className="attendance-note"><Icon name="info" size={15}/>As respostas ao convite não confirmam presença física na sala.</p>
+    <section className="detail-section"><div className="panel-heading"><h3>Convidados <span className="count-badge">{p.pessoas_convidadas ?? '?'}</span></h3></div>
+      {p.lista?.length ? <div className="participants-list">{p.lista.map((person, i) => <div className="participant" key={person.email || i}><span className="avatar">{initials(person)}</span><div><strong>{personName(person)}</strong><small>{person.email}{person.convidados_adicionais > 0 && ` · +${person.convidados_adicionais} acompanhantes`}</small></div></div>)}</div> : <p className="subtle">A lista de convidados não foi informada.</p>}
+      <p className="attendance-note"><Icon name="info" size={15}/>As respostas aos convites são privadas. Estar na lista não confirma presença na sala.</p>
       {p.lista_possivelmente_incompleta && <p className="notice">A lista de convidados pode estar incompleta.</p>}
     </section>
   </div></dialog>;
@@ -489,8 +523,8 @@ export default function App({ usuario = null, onLogout = null }) {
   const title = page === 'agenda' ? 'Agenda da sala' : 'Visão do dia';
   return <div className="app-shell"><a className="skip-link" href="#conteudo" onClick={event => { event.preventDefault(); document.getElementById('conteudo')?.focus(); }}>Pular para o conteúdo</a>
     <aside className="sidebar"><div className="brand"><img src={`${import.meta.env.BASE_URL}brand/tauge-logo-light.svg`} alt="Tauge Tecnologia" width="190" height="49" draggable={false}/></div><div className="workspace-tag"><span><Icon name="room" size={21}/></span><div><strong>Salas & encontros</strong><small>Gestão de espaços</small></div></div><p className="nav-label">ESPAÇO DE TRABALHO</p><nav aria-label="Navegação principal">{NAV.map(item => <a key={item.id} href={`#${item.id}`} className={page === item.id ? 'active' : ''} aria-current={page === item.id ? 'page' : undefined}><Icon name={item.icon}/>{item.label}{page === item.id && <span className="nav-active-dot"/>}</a>)}</nav><div className="sidebar-bottom"><div className="calendar-source"><GoogleMark/><div><strong>Google Calendar</strong><small>Dados da agenda da sala</small></div></div><div className="sidebar-footer"><span className="read-dot"/>Painel de acompanhamento</div></div></aside>
-    <main id="conteudo" tabIndex={-1}><header className="topbar"><span>Gestão de espaços <Icon name="chevron" size={13}/> <strong>{title}</strong></span><div className="topbar-right"><span className="timezone">Brasília · UTC−03:00</span><span className="workspace-avatar"><img src={`${import.meta.env.BASE_URL}brand/tauge-symbol.png`} width="30" height="30" alt="Tauge" draggable={false}/></span>{usuario && <span className="user-menu"><span className="user-name" title={usuario.email}>{usuario.nome || usuario.email}</span>{onLogout && <button type="button" className="logout-button" onClick={onLogout}>Sair</button>}</span>}</div></header>
-      <div className="main-content"><div className="page-heading"><div><h1>{title}</h1>{page === 'agenda' && <p>Datas, horários e pessoas. Tudo em uma única agenda.</p>}</div></div>
+    <main id="conteudo" tabIndex={-1}><header className="topbar"><span className="topbar-breadcrumb"><span className="topbar-breadcrumb-prefix">Gestão de espaços <Icon name="chevron" size={13}/></span><strong>{title}</strong></span><div className="topbar-right"><span className="timezone">Brasília · UTC−03:00</span><span className="workspace-avatar"><img src={`${import.meta.env.BASE_URL}brand/tauge-symbol.png`} width="30" height="30" alt="Tauge" draggable={false}/></span>{usuario && <span className="user-menu"><span className="user-name" title={usuario.email}>{usuario.nome || usuario.email}</span>{onLogout && <button type="button" className="logout-button" onClick={onLogout}>Sair</button>}</span>}</div></header>
+      <div className="main-content"><div className="page-heading"><div><h1>{title}</h1>{page === 'agenda' && <p>Datas, horários e pessoas. Tudo em uma única agenda.</p>}</div><a className="button secondary google-calendar-link" href="https://calendar.google.com/calendar/u/0/r" target="_blank" rel="noopener noreferrer" aria-label="Abrir Google Agenda em nova aba"><Icon name="calendar" size={18}/>Abrir Google Agenda</a></div>
       <div className="data-meta"><span><span className="read-dot"/>{data.geradoEm ? `Dados atualizados em ${formatDate(data.geradoEm)} às ${formatTime(data.geradoEm)}` : 'Agenda da sala de reunião'}</span></div>
       {liveState?.estado === 'erro' && <div className="sync-message live-error" role="alert"><Icon name="info" size={17}/><span>{liveState.mensagem} Os últimos dados disponíveis foram mantidos.</span></div>}
       {error && data && <div className="sync-message live-error" role="alert"><Icon name="info" size={17}/><span>{error} Exibindo os últimos dados recebidos.</span></div>}
