@@ -1,5 +1,11 @@
 # Painel de salas — Tauge
 
+> **Branch de demonstração:** `preview/mobile-calendar-demo` abre a interface com
+> reuniões e convidados fictícios, sem autenticação do painel nem consulta à API.
+> Ela serve somente para testar o layout e as interações no Vercel. Não faça merge
+> desta branch na `main`; a alteração destinada à integração está em
+> `feat/mobile-calendar-privacy` e mantém o login institucional.
+
 Interface para acompanhar as reuniões da sala. Usa os dados reais do coletor Python
 (pasta [`coletor/`](coletor/)) e oferece somente consulta e atualização dos dados.
 

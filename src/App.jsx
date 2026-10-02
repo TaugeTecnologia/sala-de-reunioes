@@ -507,7 +507,7 @@ function EventDetail({ event, close }) {
   </div></dialog>;
 }
 
-export default function App({ usuario = null, onLogout = null }) {
+export default function App({ usuario = null, onLogout = null, agendaSource = useAgendaPeriods, demo = false }) {
   const [page, setPage] = useState(() => PAGES.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'visao-geral');
   const [now, setNow] = useState(Date.now);
   const [filters, setFilters] = useState({ ...EMPTY_FILTERS });
@@ -515,7 +515,7 @@ export default function App({ usuario = null, onLogout = null }) {
   const [detailKey, setDetailKey] = useState(null);
   useEffect(() => watchClock(setNow), []);
   const periods = page === 'agenda' ? calendarPeriods(selectedWeek ?? now, filters.data) : overviewPeriods(now);
-  const { data, loading, error, liveState, liveConnection, retry } = useAgendaPeriods(periods);
+  const { data, loading, error, liveState, liveConnection, retry } = agendaSource(periods);
   const detail = data.eventos.find(event => eventKey(event) === detailKey) || null;
   function setDetail(event) { setDetailKey(event ? eventKey(event) : null); }
   useEffect(() => { if (detailKey && !data.eventos.some(event => eventKey(event) === detailKey)) setDetailKey(null); }, [data, detailKey]);
@@ -524,8 +524,8 @@ export default function App({ usuario = null, onLogout = null }) {
   return <div className="app-shell"><a className="skip-link" href="#conteudo" onClick={event => { event.preventDefault(); document.getElementById('conteudo')?.focus(); }}>Pular para o conteúdo</a>
     <aside className="sidebar"><div className="brand"><img src={`${import.meta.env.BASE_URL}brand/tauge-logo-light.svg`} alt="Tauge Tecnologia" width="190" height="49" draggable={false}/></div><div className="workspace-tag"><span><Icon name="room" size={21}/></span><div><strong>Salas & encontros</strong><small>Gestão de espaços</small></div></div><p className="nav-label">ESPAÇO DE TRABALHO</p><nav aria-label="Navegação principal">{NAV.map(item => <a key={item.id} href={`#${item.id}`} className={page === item.id ? 'active' : ''} aria-current={page === item.id ? 'page' : undefined}><Icon name={item.icon}/>{item.label}{page === item.id && <span className="nav-active-dot"/>}</a>)}</nav><div className="sidebar-bottom"><div className="calendar-source"><GoogleMark/><div><strong>Google Calendar</strong><small>Dados da agenda da sala</small></div></div><div className="sidebar-footer"><span className="read-dot"/>Painel de acompanhamento</div></div></aside>
     <main id="conteudo" tabIndex={-1}><header className="topbar"><span className="topbar-breadcrumb"><span className="topbar-breadcrumb-prefix">Gestão de espaços <Icon name="chevron" size={13}/></span><strong>{title}</strong></span><div className="topbar-right"><span className="timezone">Brasília · UTC−03:00</span><span className="workspace-avatar"><img src={`${import.meta.env.BASE_URL}brand/tauge-symbol.png`} width="30" height="30" alt="Tauge" draggable={false}/></span>{usuario && <span className="user-menu"><span className="user-name" title={usuario.email}>{usuario.nome || usuario.email}</span>{onLogout && <button type="button" className="logout-button" onClick={onLogout}>Sair</button>}</span>}</div></header>
-      <div className="main-content"><div className="page-heading"><div><h1>{title}</h1>{page === 'agenda' && <p>Datas, horários e pessoas. Tudo em uma única agenda.</p>}</div><a className="button secondary google-calendar-link" href="https://calendar.google.com/calendar/u/0/r" target="_blank" rel="noopener noreferrer" aria-label="Abrir Google Agenda em nova aba"><Icon name="calendar" size={18}/>Abrir Google Agenda</a></div>
-      <div className="data-meta"><span><span className="read-dot"/>{data.geradoEm ? `Dados atualizados em ${formatDate(data.geradoEm)} às ${formatTime(data.geradoEm)}` : 'Agenda da sala de reunião'}</span></div>
+      <div className="main-content">{demo && <div className="demo-banner" role="status"><strong>Modo de demonstração</strong><span>Reuniões e convidados fictícios. Nenhum dado real da empresa é consultado.</span></div>}<div className="page-heading"><div><h1>{title}</h1>{page === 'agenda' && <p>Datas, horários e pessoas. Tudo em uma única agenda.</p>}</div><a className="button secondary google-calendar-link" href="https://calendar.google.com/calendar/u/0/r" target="_blank" rel="noopener noreferrer" aria-label="Abrir Google Agenda em nova aba"><Icon name="calendar" size={18}/>Abrir Google Agenda</a></div>
+      <div className="data-meta"><span><span className="read-dot"/>{demo ? 'Dados fictícios para testar a interface' : data.geradoEm ? `Dados atualizados em ${formatDate(data.geradoEm)} às ${formatTime(data.geradoEm)}` : 'Agenda da sala de reunião'}</span></div>
       {liveState?.estado === 'erro' && <div className="sync-message live-error" role="alert"><Icon name="info" size={17}/><span>{liveState.mensagem} Os últimos dados disponíveis foram mantidos.</span></div>}
       {error && data && <div className="sync-message live-error" role="alert"><Icon name="info" size={17}/><span>{error} Exibindo os últimos dados recebidos.</span></div>}
       {loading && <div className="sync-message" role="status"><Icon name="refresh" size={17}/><span>Carregando reuniões do período selecionado…</span></div>}
